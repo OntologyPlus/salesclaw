@@ -1,0 +1,207 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+    font-family: "PingFang SC", "Noto Sans SC", "Inter", system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: normal;
+  }
+  .dark body {
+    @apply text-slate-100;
+    background: #171310;
+    background-image: radial-gradient(ellipse at top, rgba(20, 184, 166, 0.04) 0%, transparent 60%);
+  }
+  /* 选中文本 */
+  ::selection {
+    @apply bg-brand-500/20 text-brand-900;
+  }
+  .dark ::selection {
+    @apply bg-brand-500/30 text-brand-100;
+  }
+}
+
+@layer components {
+  /* F16：聊天界面组件类收敛 */
+  .chat-bubble-user {
+    @apply max-w-[90%] px-4 py-2.5 rounded-2xl bg-brand-600 text-white rounded-tr-sm text-sm break-words whitespace-pre-wrap;
+  }
+  .chat-bubble-assistant {
+    @apply max-w-[90%] px-4 py-2.5 rounded-2xl bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100 rounded-tl-sm text-sm break-words;
+  }
+  .chat-avatar-user {
+    @apply flex items-center justify-center w-8 h-8 rounded-full shrink-0 bg-brand-600 text-white;
+  }
+  .chat-avatar-assistant {
+    @apply flex items-center justify-center w-8 h-8 rounded-full shrink-0 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300;
+  }
+  .chat-tag {
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px];
+  }
+  .chat-tag-intent {
+    @apply chat-tag bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300;
+  }
+  .chat-tag-agent {
+    @apply chat-tag bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300;
+  }
+  .chat-tag-skill {
+    @apply chat-tag bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300;
+  }
+  .chat-tag-tool {
+    @apply chat-tag bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300;
+  }
+  .quick-starter-btn {
+    @apply px-3 py-1.5 rounded-full text-xs bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors;
+  }
+  .panel-card {
+    @apply rounded-2xl bg-white border border-slate-200 overflow-hidden;
+  }
+  .dark .panel-card {
+    background: #242019;
+    border-color: rgba(120, 100, 75, 0.15);
+  }
+  .msg-action-btn {
+    @apply p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors;
+  }
+  .ai-glass-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.85), rgba(255,255,255,0.5));
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(20, 184, 166, 0.15);
+  }
+  .dark .ai-glass-card {
+    background: linear-gradient(135deg, rgba(30,26,21,0.88), rgba(23,19,16,0.6));
+    border-color: rgba(20, 184, 166, 0.12);
+  }
+
+  /* 全局暗黑暖色覆盖：将所有 slate 冷色面板/边框统一转暖。
+     注意 Tailwind 的 `dark:bg-slate-*` 编译后类名为 `dark:bg-slate-*`（CSS 转义为
+     `.dark\:bg-slate-*`），故选择器需带 `dark:` 前缀才能命中；同时保留无前缀写法以兼容
+     `bg-slate-*`（非 dark 前缀）的遗留用法。 */
+  .dark .dark\:bg-slate-900,
+  .dark .bg-slate-900 {
+    background-color: #1e1a15 !important;
+  }
+  .dark .dark\:bg-slate-800,
+  .dark .bg-slate-800 {
+    background-color: #242019 !important;
+  }
+  .dark .dark\:bg-slate-700,
+  .dark .bg-slate-700 {
+    background-color: #2a2520 !important;
+  }
+  .dark .dark\:bg-slate-700\/40,
+  .dark .bg-slate-700\/40 {
+    background-color: rgba(42,37,32,0.5) !important;
+  }
+  .dark .dark\:bg-slate-700\/60,
+  .dark .bg-slate-700\/60 {
+    background-color: rgba(42,37,32,0.7) !important;
+  }
+  /* 带透明度的变体 */
+  .dark .dark\:bg-slate-900\/20,
+  .dark .bg-slate-900\/20 { background-color: rgba(30,26,21,0.5) !important; }
+  .dark .dark\:bg-slate-900\/30,
+  .dark .bg-slate-900\/30 { background-color: rgba(30,26,21,0.6) !important; }
+  .dark .dark\:bg-slate-900\/40,
+  .dark .bg-slate-900\/40 { background-color: rgba(30,26,21,0.7) !important; }
+  .dark .dark\:bg-slate-900\/50,
+  .dark .bg-slate-900\/50 { background-color: rgba(30,26,21,0.8) !important; }
+  .dark .dark\:bg-slate-900\/60,
+  .dark .bg-slate-900\/60 { background-color: rgba(30,26,21,0.85) !important; }
+  .dark .dark\:bg-slate-900\/80,
+  .dark .bg-slate-900\/80 { background-color: rgba(30,26,21,0.95) !important; }
+  .dark .dark\:border-slate-800,
+  .dark .border-slate-800 {
+    border-color: rgba(120, 100, 75, 0.15) !important;
+  }
+  .dark .dark\:border-slate-700,
+  .dark .border-slate-700 {
+    border-color: rgba(120, 100, 75, 0.2) !important;
+  }
+  .dark .dark\:divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+  .dark .divide-slate-800 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgba(120, 100, 75, 0.15) !important;
+  }
+  .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgba(120, 100, 75, 0.1) !important;
+  }
+  /* hover 状态 */
+  .dark .dark\:hover\:bg-slate-700:hover {
+    background-color: #2a2520 !important;
+  }
+  .dark .dark\:hover\:bg-slate-800:hover {
+    background-color: #2a2520 !important;
+  }
+  .dark .dark\:hover\:bg-slate-900:hover {
+    background-color: #1e1a15 !important;
+  }
+  .dark .dark\:hover\:bg-slate-700\/40:hover {
+    background-color: rgba(42,37,32,0.4) !important;
+  }
+  .dark .dark\:hover\:bg-slate-700\/60:hover {
+    background-color: rgba(42,37,32,0.6) !important;
+  }
+}
+
+@layer utilities {
+  /* AI 在场呼吸动画 */
+  @keyframes ai-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.4); }
+    50% { opacity: 0.85; box-shadow: 0 0 0 6px rgba(20, 184, 166, 0); }
+  }
+  .ai-pulse { animation: ai-pulse 2s ease-in-out infinite; }
+
+  /* AI 异常警报呼吸 */
+  @keyframes ai-alert-pulse {
+    0%, 100% { border-color: rgb(245 158 11 / 0.3); }
+    50% { border-color: rgb(245 158 11 / 0.8); }
+  }
+  .ai-alert-border { animation: ai-alert-pulse 2s ease-in-out infinite; }
+
+  /* AI 进度条 shimmer */
+  @keyframes ai-progress {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+  }
+  .ai-progress-shimmer {
+    animation: ai-progress 1.5s ease-in-out infinite;
+  }
+
+  /* AI 洞察 marquee 滚动 */
+  @keyframes ai-marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .ai-marquee { animation: ai-marquee 20s linear infinite; }
+  .ai-marquee:hover { animation-play-state: paused; }
+
+  /* 全局滚动条美化 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(55 45 35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full;
+  }
+  .dark *::-webkit-scrollbar-thumb {
+    background: #302a22;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background: #3d352b;
+  }
+}
