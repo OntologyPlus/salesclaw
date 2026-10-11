@@ -2846,11 +2846,12 @@ def _sign_compliance_commitment(args: dict, ctx: dict) -> dict:
     from services import compliance_service
     from ai.skills.scene_workspace import scene_workspace
     result = compliance_service.sign_commitment(
-        db, tenant_id, user_id, user_id,
+        db, tenant_id, user_id,
         commitment_type=args.get("commitment_type", "onboarding"),
+        commitment_text=args.get("commitment_text") or "本人承诺严格遵守《医药代表管理办法》及公司合规制度。",
+        version=args.get("version") or "1.0",
         course_id=args.get("course_id"),
         exam_record_id=args.get("exam_record_id"),
-        commitment_text=args.get("commitment_text", ""),
         signer_ip=args.get("signer_ip"),
         signer_ua=args.get("signer_ua"),
     )
@@ -2999,53 +3000,229 @@ def _sync_activity_draft(args: dict, ctx: dict) -> dict:
     return {"collection": coll, "user_confirmed": coll.get("user_confirmed")}
 
 
-def _submit_activity_checkin(args: dict, ctx: dict) -> dict:
-    """提交签到证据"""
+def _activity_role(db, user_id) -> str:
+    from services.compliance_service import get_user_role
+    return get_user_role(db, user_id) or "pharma_rep"
+
+
+def _resolve_activity_id(args: dict, draft) -> Optional[int]:
+    raw = args.get("activity_id") or getattr(draft, "scenario_id", None)
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _create_activity_record(args: dict, ctx: dict) -> dict:
+    """立项：从 draft.collection 创建学术活动，写入 scenario_id（G4）"""
     db = ctx.get("db")
     session_id = ctx.get("session_id")
     tenant_id = ctx.get("tenant_id", "default")
     user_id = ctx.get("user_id")
-    activity_id = args.get("activity_id")
-    checkin_evidence = args.get("checkin_evidence") or {}
-    if not all([db, session_id, user_id, activity_id]):
-        return {"error": "缺少 db/session_id/user_id/activity_id"}
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
     from services import academic_activity_service
-    return academic_activity_service.checkin(
-        db, tenant_id, activity_id, user_id, "pharma_rep", checkin_evidence,
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    coll = dict(draft.collection or {})
+    data = {
+        "title": args.get("title") or coll.get("title"),
+        "activity_type": args.get("activity_type") or coll.get("activity_type") or "lecture",
+        "planned_at": args.get("planned_at") or coll.get("planned_at"),
+        "location": args.get("location") or coll.get("location"),
+        "province": args.get("province") or coll.get("province"),
+        "city": args.get("city") or coll.get("city"),
+        "target_audience": args.get("target_audience") or coll.get("target_audience"),
+        "expected_attendees": args.get("expected_attendees") or coll.get("expected_attendees") or 0,
+        "description": args.get("description") or coll.get("description") or "",
+        "agenda": args.get("agenda") or coll.get("agenda") or [],
+        "pharma_rep_user_id": user_id,
+    }
+    if data.get("planned_at") and isinstance(data["planned_at"], str):
+        try:
+            from datetime import datetime as _dt
+            data["planned_at"] = _dt.fromisoformat(data["planned_at"].replace("Z", ""))
+        except (ValueError, TypeError):
+            pass
+    result = academic_activity_service.create_activity(
+        db, tenant_id, user_id, _activity_role(db, user_id), data,
     )
+    draft.scenario_id = result.get("id")
+    draft.current_step = "step3_created"
+    tb = draft.title_bg or {}
+    tb["activity"] = {"id": result.get("id"), "status": result.get("status")}
+    draft.title_bg = tb
+    scene_workspace.save(draft, db)
+    return result
+
+
+def _approve_activity_record(args: dict, ctx: dict) -> dict:
+    """审批通过：推进至 approved，写入 title_bg.approved（G5）"""
+    db = ctx.get("db")
+    session_id = ctx.get("session_id")
+    tenant_id = ctx.get("tenant_id", "default")
+    user_id = ctx.get("user_id")
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
+    from services import academic_activity_service
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    activity_id = _resolve_activity_id(args, draft)
+    if not activity_id:
+        return {"error": "缺少 activity_id（请先立项）"}
+    result = academic_activity_service.approve_activity(
+        db, tenant_id, activity_id, user_id, _activity_role(db, user_id),
+        args.get("approval_id"), args.get("comment"),
+    )
+    tb = draft.title_bg or {}
+    tb["approved"] = True
+    tb["activity"] = {"id": result.get("id"), "status": result.get("status")}
+    draft.title_bg = tb
+    draft.current_step = "step4_approved"
+    scene_workspace.save(draft, db)
+    return result
+
+
+def _attach_activity_protocol(args: dict, ctx: dict) -> dict:
+    """附加会议协议（三流：协议流）"""
+    db = ctx.get("db")
+    session_id = ctx.get("session_id")
+    tenant_id = ctx.get("tenant_id", "default")
+    user_id = ctx.get("user_id")
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
+    from services import academic_activity_service
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    activity_id = _resolve_activity_id(args, draft)
+    if not activity_id:
+        return {"error": "缺少 activity_id（请先立项）"}
+    protocol = args.get("protocol") or {}
+    if not protocol.get("protocol_no"):
+        protocol["protocol_no"] = f"PROT-{tenant_id}-{activity_id}"
+    result = academic_activity_service.attach_protocol(
+        db, tenant_id, activity_id, user_id, _activity_role(db, user_id), protocol,
+    )
+    kn = draft.knowledge or {}
+    kn["protocol"] = protocol
+    draft.knowledge = kn
+    scene_workspace.save(draft, db)
+    return result
+
+
+def _archive_activity_record(args: dict, ctx: dict) -> dict:
+    """归档学术活动（与反馈一起完成 G8）"""
+    db = ctx.get("db")
+    session_id = ctx.get("session_id")
+    tenant_id = ctx.get("tenant_id", "default")
+    user_id = ctx.get("user_id")
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
+    from services import academic_activity_service
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    activity_id = _resolve_activity_id(args, draft)
+    if not activity_id:
+        return {"error": "缺少 activity_id（请先立项）"}
+    result = academic_activity_service.archive_activity(
+        db, tenant_id, activity_id, user_id, _activity_role(db, user_id),
+    )
+    draft.submit_confirmed = True
+    draft.current_step = "step7_archived"
+    scene_workspace.save(draft, db)
+    return result
+
+
+def _submit_activity_checkin(args: dict, ctx: dict) -> dict:
+    """提交签到证据，同步 knowledge.checkin_count（G6）"""
+    db = ctx.get("db")
+    session_id = ctx.get("session_id")
+    tenant_id = ctx.get("tenant_id", "default")
+    user_id = ctx.get("user_id")
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
+    from services import academic_activity_service
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    activity_id = _resolve_activity_id(args, draft)
+    checkin_evidence = args.get("checkin_evidence") or {"method": "onsite", "note": "现场签到"}
+    if not activity_id:
+        return {"error": "缺少 activity_id（请先立项）"}
+    result = academic_activity_service.checkin(
+        db, tenant_id, activity_id, user_id, _activity_role(db, user_id), checkin_evidence,
+    )
+    kn = draft.knowledge or {}
+    kn["checkin_count"] = len(result.get("checkin_evidence") or []) or 1
+    draft.knowledge = kn
+    draft.current_step = "step5_checkin"
+    scene_workspace.save(draft, db)
+    return result
 
 
 def _submit_activity_expense(args: dict, ctx: dict) -> dict:
-    """提交费用核销"""
+    """提交费用核销，同步 knowledge.expense_count（G7）"""
     db = ctx.get("db")
     session_id = ctx.get("session_id")
     tenant_id = ctx.get("tenant_id", "default")
     user_id = ctx.get("user_id")
-    activity_id = args.get("activity_id")
-    expense_voucher = args.get("expense_voucher") or {}
-    if not all([db, session_id, user_id, activity_id]):
-        return {"error": "缺少 db/session_id/user_id/activity_id"}
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
     from services import academic_activity_service
-    return academic_activity_service.submit_expense(
-        db, tenant_id, activity_id, user_id, "pharma_rep", expense_voucher,
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    activity_id = _resolve_activity_id(args, draft)
+    expense_voucher = args.get("expense_voucher") or {}
+    if not expense_voucher.get("amount"):
+        expense_voucher = {**expense_voucher, "amount": args.get("amount") or 50000, "type": "venue"}
+    if not activity_id:
+        return {"error": "缺少 activity_id（请先立项）"}
+    result = academic_activity_service.submit_expense(
+        db, tenant_id, activity_id, user_id, _activity_role(db, user_id), expense_voucher,
     )
+    kn = draft.knowledge or {}
+    kn["expense_count"] = len(result.get("expense_vouchers") or []) or 1
+    draft.knowledge = kn
+    draft.current_step = "step6_expense"
+    scene_workspace.save(draft, db)
+    return result
 
 
 def _submit_activity_feedback(args: dict, ctx: dict) -> dict:
-    """提交反馈与不良反应"""
+    """提交反馈与不良反应；若 auto_archive 则一并归档完成 G8"""
     db = ctx.get("db")
     session_id = ctx.get("session_id")
     tenant_id = ctx.get("tenant_id", "default")
     user_id = ctx.get("user_id")
-    activity_id = args.get("activity_id")
-    feedback = args.get("feedback", "")
-    adverse_reactions = args.get("adverse_reactions") or []
-    if not all([db, session_id, user_id, activity_id]):
-        return {"error": "缺少 db/session_id/user_id/activity_id"}
+    if not all([db, session_id, user_id]):
+        return {"error": "缺少 db/session_id/user_id 上下文"}
     from services import academic_activity_service
-    return academic_activity_service.submit_feedback(
-        db, tenant_id, activity_id, user_id, "pharma_rep", feedback, adverse_reactions,
+    from ai.skills.scene_workspace import scene_workspace
+    draft = scene_workspace.load(session_id, db, tenant_id, user_id)
+    activity_id = _resolve_activity_id(args, draft)
+    feedback = args.get("feedback") or "活动反馈：内容合规，反馈良好"
+    adverse_reactions = args.get("adverse_reactions") or []
+    if not activity_id:
+        return {"error": "缺少 activity_id（请先立项）"}
+    role = _activity_role(db, user_id)
+    result = academic_activity_service.submit_feedback(
+        db, tenant_id, activity_id, user_id, role, feedback, adverse_reactions,
     )
+    auto_archive = args.get("auto_archive", True)
+    if auto_archive:
+        result = academic_activity_service.archive_activity(
+            db, tenant_id, activity_id, user_id, role,
+        )
+        draft.submit_confirmed = True
+        draft.current_step = "step7_archived"
+    else:
+        draft.current_step = "step6_feedback"
+    kn = draft.knowledge or {}
+    kn["feedback"] = feedback
+    draft.knowledge = kn
+    scene_workspace.save(draft, db)
+    return result
 
 
 def _validate_activity_gate(args: dict, ctx: dict) -> dict:
@@ -3255,12 +3432,16 @@ TOOL_REGISTRY: dict[str, Callable] = {
     "submit_onboarding_registration": _submit_onboarding_registration,
     "create_onboarding_record": _create_onboarding_record,
     "validate_onboarding_gate": _validate_onboarding_gate,
-    # v2.2 Phase 2：academic-activity-lifecycle 工作流原语（6 个，学术活动全生命周期）
+    # v2.2 Phase 2：academic-activity-lifecycle 工作流原语（10 个，学术活动全生命周期）
     "fetch_activity_template": _fetch_activity_template,
     "sync_activity_draft": _sync_activity_draft,
+    "create_activity_record": _create_activity_record,
+    "approve_activity_record": _approve_activity_record,
+    "attach_activity_protocol": _attach_activity_protocol,
     "submit_activity_checkin": _submit_activity_checkin,
     "submit_activity_expense": _submit_activity_expense,
     "submit_activity_feedback": _submit_activity_feedback,
+    "archive_activity_record": _archive_activity_record,
     "validate_activity_gate": _validate_activity_gate,
     # F7: 知识蒸馏工具原语（4 个，借鉴诊断体系 §8.1-8.3）
     "extract_closure_cases": _extract_closure_cases,

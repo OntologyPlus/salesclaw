@@ -91,9 +91,11 @@ function AppContent() {
       {!isAIPage && (
         <>
           <button
+            type="button"
             onClick={() => setAiSidebarOpen(true)}
             className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-brand-500 hover:bg-brand-600 text-white shadow-lg flex items-center justify-center transition-colors"
             title="AI 助手"
+            aria-label="AI 助手"
           >
             <Sparkles className="w-6 h-6" />
           </button>

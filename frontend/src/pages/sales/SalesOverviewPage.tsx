@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   BarChart3, CalendarCheck, FileText, Users, TrendingUp, Award, Map, Grid3x3, AlertCircle,
 } from 'lucide-react'
@@ -9,10 +8,12 @@ import Badge from '@/components/ui/Badge'
 import PageGrid from '@/components/layout/PageGrid'
 import SectionCard from '@/components/layout/SectionCard'
 import ListSection from '@/components/layout/ListSection'
+import DomainNavGrid from '@/components/layout/DomainNavGrid'
 import AIInsightBlock from '@/components/ai/AIInsightBlock'
 import { useFetch } from '@/hooks/useFetch'
 import { salesAPI } from '@/services/sales'
 import api from '@/services/api'
+import { getNavItemsByPrefixes } from '@/config/navConfig'
 import type { PageRes, StatusMap, AiInsightPayload } from '@/types/page'
 
 interface SalesOverview {
@@ -184,6 +185,11 @@ export default function SalesOverviewPage() {
           />
         </SectionCard>
       </div>
+
+      <DomainNavGrid
+        className="mt-6"
+        items={getNavItemsByPrefixes(['/sales', '/collection'], { excludeExact: ['/sales'] })}
+      />
 
       <div className="mt-6">
         <AIInsightBlock payload={aiInsights ?? undefined} loading={insightLoading} title="AI 销售洞察" />

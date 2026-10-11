@@ -18,6 +18,7 @@ import Tabs from '@/components/ui/Tabs'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { salesAPI } from '@/services/sales'
+import type { PageRes } from '@/types/page'
 
 // 计划行
 interface PlanItem extends Record<string, unknown> {
@@ -42,12 +43,6 @@ interface PlanDetailItem {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 医院/医生/产品
 interface Option { id: number; name: string }

@@ -66,8 +66,8 @@ export default function ComplianceForbiddenPage() {
         ))}
       </div>
 
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-surface-border-subtle-dark">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">禁止行为（{tab}）</h2>
         </div>
         {!behaviors?.length ? (
@@ -90,8 +90,8 @@ export default function ComplianceForbiddenPage() {
         )}
       </div>
 
-      <div className="mt-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+      <div className="mt-4 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-surface-border-subtle-dark flex items-center gap-2">
           <Wrench className="w-4 h-4 text-amber-500" />
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">禁止工具</h2>
         </div>

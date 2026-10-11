@@ -73,9 +73,9 @@ export default function DataTable<T extends Record<string, unknown>>({
   }, [aiExplainable, toast])
 
   return (
-    <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
       {toolbar && (
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200 dark:border-surface-border-subtle-dark">
           {toolbar}
         </div>
       )}

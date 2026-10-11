@@ -6,14 +6,9 @@ import Badge from '@/components/ui/Badge'
 import { useFetch } from '@/hooks/useFetch'
 import { mdmAPI } from '@/services/mdm'
 import AIInsightPanel from '@/components/ai/AIInsightPanel'
+import type { PageRes } from '@/types/page'
 
 // 通用分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 主数据行（统一为带 id 的记录）
 interface MdmRow extends Record<string, unknown> {

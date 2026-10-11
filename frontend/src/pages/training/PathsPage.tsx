@@ -15,6 +15,7 @@ import Empty from '@/components/ui/Empty'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { trainingAPI } from '@/services/training'
+import type { PageRes } from '@/types/page'
 
 // 学习路径
 interface PathItem extends Record<string, unknown> {
@@ -38,12 +39,6 @@ interface PathStage {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 export default function PathsPage() {
   const toast = useToast()

@@ -14,6 +14,7 @@ import PPTSpeechPage from './PPTSpeechPage'
 import ExperiencePage from './ExperiencePage'
 import SceneCreateChatPage from './SceneCreateChatPage'
 import ExamCreateChatPage from './ExamCreateChatPage'
+import OnboardingChatPage from './OnboardingChatPage'
 // B 路径：培训效果因果归因
 import EffectOverviewPage from './EffectOverviewPage'
 import ExecutionDetailPage from './ExecutionDetailPage'
@@ -37,6 +38,7 @@ function TrainingRoutes() {
       <Route path="experience" element={<ExperiencePage />} />
       <Route path="scene-create" element={<SceneCreateChatPage />} />
       <Route path="exam-create" element={<ExamCreateChatPage />} />
+      <Route path="onboarding" element={<OnboardingChatPage />} />
       {/* B 路径：培训效果因果归因路由 */}
       <Route path="effect" element={<EffectOverviewPage />} />
       <Route path="effect/:executionId" element={<ExecutionDetailPage />} />

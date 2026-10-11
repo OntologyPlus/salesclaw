@@ -5,6 +5,7 @@ import AIActionButton from '@/components/ai/AIActionButton'
 import Empty from '@/components/ui/Empty'
 import useFetch from '@/hooks/useFetch'
 import { knowledgeAPI } from '@/services/knowledge'
+import type { PageRes } from '@/types/page'
 
 interface FaqItem {
   id: number
@@ -16,12 +17,6 @@ interface FaqItem {
   created_at?: string
 }
 
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 const CATEGORY_CONFIG: Record<string, { label: string; cls: string }> = {
   product: { label: '产品', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' },

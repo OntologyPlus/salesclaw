@@ -95,7 +95,7 @@ export default function AIEmpty({
               className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-300 hover:shadow-sm text-xs text-slate-700 dark:text-slate-200 transition-all"
             >
               <Wand2 className="w-3 h-3 text-brand-500 group-hover:rotate-12 transition-transform" />
-              <span className="line-clamp-1">{q.replace(/^我.*?[？\?]/, '').trim() || q}</span>
+              <span className="line-clamp-1">{q.replace(/^我.*?[？?]/, '').trim() || q}</span>
             </button>
           ))}
         </div>

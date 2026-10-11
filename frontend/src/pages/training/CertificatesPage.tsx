@@ -12,6 +12,7 @@ import Empty from '@/components/ui/Empty'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { trainingAPI } from '@/services/training'
+import type { PageRes } from '@/types/page'
 
 // 证书
 interface Certificate {
@@ -26,12 +27,6 @@ interface Certificate {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 证书类型映射
 const certTypeMap: Record<string, { label: string; variant: 'default' | 'success' | 'warning' | 'error' | 'info' }> = {

@@ -56,23 +56,12 @@ class ToolLoop:
     # B4：状态快照
     # ──────────────────────────────────────────────
     def snapshot(self) -> dict:
-        """B4：返回当前 ToolLoop 运行状态快照
-
-        用于断点续传、可观测性、调试。每轮工具执行后自动更新内部状态。
-
-        Returns:
-            {
-                round: int,                  # 当前轮次（从 1 开始）
-                max_rounds: int,             # 最大轮次
-                tools_used: list,            # 已使用的工具调用记录
-                working_messages_count: int, # working_messages 长度
-                last_content: str,           # 最近一次 LLM 响应（截断 200 字符）
-            }
-        """
+        """B4 / Phase B：返回当前 ToolLoop 运行状态快照（含 messages 供续跑）。"""
         return {
             "round": self._current_round,
             "max_rounds": self.max_rounds,
             "tools_used": list(self._tools_used_cache),
+            "messages": list(self._working_messages),
             "working_messages_count": len(self._working_messages),
             "last_content": (self._last_content or "")[:200],
         }
@@ -84,6 +73,40 @@ class ToolLoop:
         self._tools_used_cache = []
         self._last_content = ""
 
+    def _aborted_result(
+        self, tools_used: list, last_content: str, round_num: int
+    ) -> dict:
+        """Phase A：协作取消时的统一返回结构。"""
+        self._tools_used_cache = tools_used
+        return {
+            "response": last_content or "",
+            "tools_used": tools_used,
+            "rounds": max(round_num, 0),
+            "truncated": True,
+            "aborted": True,
+        }
+
+    @staticmethod
+    def _should_stop(should_cancel: Optional[Callable[[], bool]]) -> bool:
+        if should_cancel is None:
+            return False
+        try:
+            return bool(should_cancel())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _span(name: str, ctx: Optional[dict] = None, **attrs):
+        """Phase B：OTEL span 上下文（失败时退化为 nullcontext）。"""
+        from contextlib import nullcontext
+        try:
+            from ai.otel_spans import span
+            ctx = ctx or {}
+            attributes = {"run_id": ctx.get("run_id"), **attrs}
+            return span(name, trace_id=ctx.get("trace_id"), attributes=attributes)
+        except Exception:
+            return nullcontext()
+
     def run(
         self,
         messages: list,
@@ -92,6 +115,9 @@ class ToolLoop:
         intent: str = "",
         tenant_id: str = "default",
         on_round_end: Optional[Callable[[int, dict], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+        resume_state: Optional[dict] = None,
+        budget_deadline: Optional[float] = None,
     ) -> dict:
         """执行工具调用循环
 
@@ -102,6 +128,8 @@ class ToolLoop:
             intent: 意图标签（用于缓存）
             tenant_id: 租户 ID
             on_round_end: B4 可选回调，每轮工具执行后调用 (round_num, snapshot_dict)
+            resume_state: Phase B 续跑状态 {messages, tools_used, round}
+            budget_deadline: time.monotonic() 截止时间，超时 truncated
 
         Returns:
             {
@@ -111,6 +139,7 @@ class ToolLoop:
                 truncated: bool,        # 是否因达到 max_rounds 截断
             }
         """
+        import time
         ctx = ctx or {}
         tools_used: list = []
         self._reset_state()
@@ -119,21 +148,41 @@ class ToolLoop:
         if available_tools is None:
             available_tools = list(self.tools.keys())
 
-        # 构建工具描述并注入 system prompt
-        tool_desc = self._build_tool_description(available_tools)
-        working_messages = self._inject_tool_prompt(messages, tool_desc)
+        start_round = 0
+        if resume_state and resume_state.get("messages"):
+            working_messages = list(resume_state["messages"])
+            tools_used = list(resume_state.get("tools_used") or [])
+            start_round = int(resume_state.get("round") or 0)
+            last_content = resume_state.get("last_content") or ""
+        else:
+            tool_desc = self._build_tool_description(available_tools)
+            working_messages = self._inject_tool_prompt(messages, tool_desc)
+            last_content = ""
         self._working_messages = working_messages
+        self._tools_used_cache = tools_used
 
-        last_content = ""
-        for round_num in range(self.max_rounds):
+        for round_num in range(start_round, self.max_rounds):
+            if self._should_stop(should_cancel):
+                return self._aborted_result(tools_used, last_content, round_num)
+            if budget_deadline is not None and time.monotonic() >= budget_deadline:
+                self._tools_used_cache = tools_used
+                return {
+                    "response": last_content,
+                    "tools_used": tools_used,
+                    "rounds": round_num,
+                    "truncated": True,
+                    "budget_exceeded": True,
+                }
             self._current_round = round_num + 1
             # 调用 LLM（非流式，工具循环内部不需要流式）
-            llm_result = self.llm.chat(
-                messages=working_messages,
-                intent=intent,
-                use_cache=False,  # 工具循环不缓存（中间状态无意义）
-                tenant_id=tenant_id,
-            )
+            with self._span("tool_loop.llm", ctx, round=self._current_round):
+                llm_result = self.llm.chat(
+                    messages=working_messages,
+                    intent=intent,
+                    use_cache=False,  # 工具循环不缓存（中间状态无意义）
+                    tenant_id=tenant_id,
+                    trace_id=ctx.get("trace_id"),
+                )
             content = llm_result.get("content", "")
             last_content = content
             self._last_content = content
@@ -167,9 +216,10 @@ class ToolLoop:
                 })
                 continue
 
-            # 执行工具
+            # 执行工具（Phase B：写工具经 Action Gateway）
             try:
-                tool_result = self._execute_tool(tool_name, tool_args, ctx)
+                with self._span("tool_loop.tool", ctx, tool=tool_name, round=self._current_round):
+                    tool_result = self._execute_tool(tool_name, tool_args, ctx)
                 tools_used.append({
                     "name": tool_name,
                     "args": tool_args,
@@ -201,6 +251,7 @@ class ToolLoop:
                 "role": "user",
                 "content": f"工具「{tool_name}」执行结果：\n{result_str}\n\n请基于以上结果继续回答用户问题，或调用下一个工具。若已有足够信息，请直接给出最终回答（不要再使用工具）。",
             })
+            self._working_messages = working_messages
             self._tools_used_cache = tools_used
 
             # B4：每轮结束回调
@@ -226,6 +277,9 @@ class ToolLoop:
         intent: str = "",
         tenant_id: str = "default",
         on_round_end: Optional[Callable[[int, dict], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+        resume_state: Optional[dict] = None,
+        budget_deadline: Optional[float] = None,
     ) -> dict:
         """N+5 阻塞治理：异步版本 - 用 await llm.async_chat 释放事件循环
 
@@ -233,6 +287,7 @@ class ToolLoop:
         WorkflowSkillExecutor.async_execute() 使用此方法，避免 8 轮 LLM 调用占用线程。
         B4：与 run() 同步增加状态快照与 on_round_end 回调。
         """
+        import time
         ctx = ctx or {}
         tools_used: list = []
         self._reset_state()
@@ -240,12 +295,31 @@ class ToolLoop:
         if available_tools is None:
             available_tools = list(self.tools.keys())
 
-        tool_desc = self._build_tool_description(available_tools)
-        working_messages = self._inject_tool_prompt(messages, tool_desc)
+        start_round = 0
+        if resume_state and resume_state.get("messages"):
+            working_messages = list(resume_state["messages"])
+            tools_used = list(resume_state.get("tools_used") or [])
+            start_round = int(resume_state.get("round") or 0)
+            last_content = resume_state.get("last_content") or ""
+        else:
+            tool_desc = self._build_tool_description(available_tools)
+            working_messages = self._inject_tool_prompt(messages, tool_desc)
+            last_content = ""
         self._working_messages = working_messages
+        self._tools_used_cache = tools_used
 
-        last_content = ""
-        for round_num in range(self.max_rounds):
+        for round_num in range(start_round, self.max_rounds):
+            if self._should_stop(should_cancel):
+                return self._aborted_result(tools_used, last_content, round_num)
+            if budget_deadline is not None and time.monotonic() >= budget_deadline:
+                self._tools_used_cache = tools_used
+                return {
+                    "response": last_content,
+                    "tools_used": tools_used,
+                    "rounds": round_num,
+                    "truncated": True,
+                    "budget_exceeded": True,
+                }
             self._current_round = round_num + 1
             # 异步调用 LLM
             llm_result = await self.llm.async_chat(
@@ -253,6 +327,7 @@ class ToolLoop:
                 intent=intent,
                 use_cache=False,
                 tenant_id=tenant_id,
+                trace_id=ctx.get("trace_id"),
             )
             content = llm_result.get("content", "")
             last_content = content
@@ -382,7 +457,13 @@ class ToolLoop:
             }
 
         tool_fn = self.tools[name]
-        return tool_fn(args, ctx)
+        # Phase B：写工具经 Action Gateway（幂等账本）
+        try:
+            from action.gateway import action_gateway
+            return action_gateway.dispatch_tool(name, args, ctx, tool_fn)
+        except Exception as gw_err:
+            logger.warning("[gateway] 调度失败，降级直调工具 %s: %s", name, gw_err)
+            return tool_fn(args, ctx)
 
     def _build_tool_description(self, available_tools: list) -> str:
         """构建工具描述文本（从 Ontology ACTIONS + 注册表元数据生成）"""
@@ -485,6 +566,9 @@ class ToolLoop:
         tenant_id: str = "default",
         on_round_end: Optional[Callable[[int, dict], None]] = None,
         trace_id: str = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+        resume_state: Optional[dict] = None,
+        budget_deadline: Optional[float] = None,
     ) -> dict:
         """B13：原生 function calling 模式
 
@@ -515,6 +599,9 @@ class ToolLoop:
                 messages=messages, available_tools=available_tools,
                 ctx=ctx, intent=intent, tenant_id=tenant_id,
                 on_round_end=on_round_end,
+                should_cancel=should_cancel,
+                resume_state=resume_state,
+                budget_deadline=budget_deadline,
             )
 
         # 仍需注入工具提示作为 system prompt 上下文（让 LLM 知道工具用途）
@@ -524,7 +611,19 @@ class ToolLoop:
         self._working_messages = working_messages
 
         last_content = ""
+        import time as _time
         for round_num in range(self.max_rounds):
+            if self._should_stop(should_cancel):
+                return self._aborted_result(tools_used, last_content, round_num)
+            if budget_deadline is not None and _time.monotonic() >= budget_deadline:
+                self._tools_used_cache = tools_used
+                return {
+                    "response": last_content,
+                    "tools_used": tools_used,
+                    "rounds": round_num,
+                    "truncated": True,
+                    "budget_exceeded": True,
+                }
             self._current_round = round_num + 1
             # 调用 LLM（带 tools schema）
             result = self.llm.chat_with_tools(
@@ -549,6 +648,8 @@ class ToolLoop:
                     intent=intent,
                     tenant_id=tenant_id,
                     on_round_end=on_round_end,
+                    should_cancel=should_cancel,
+                    budget_deadline=budget_deadline,
                 )
                 # 合并 tools_used
                 if tools_used:
@@ -665,6 +766,7 @@ class ToolLoop:
         tenant_id: str = "default",
         on_round_end: Optional[Callable[[int, dict], None]] = None,
         trace_id: str = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
     ) -> dict:
         """B13：原生 function calling 异步版本
 
@@ -686,6 +788,7 @@ class ToolLoop:
                 messages=messages, available_tools=available_tools,
                 ctx=ctx, intent=intent, tenant_id=tenant_id,
                 on_round_end=on_round_end,
+                should_cancel=should_cancel,
             )
 
         tool_desc = self._build_tool_description(available_tools)
@@ -694,6 +797,8 @@ class ToolLoop:
 
         last_content = ""
         for round_num in range(self.max_rounds):
+            if self._should_stop(should_cancel):
+                return self._aborted_result(tools_used, last_content, round_num)
             self._current_round = round_num + 1
             result = await self.llm.chat_with_tools_async(
                 messages=working_messages,
@@ -715,6 +820,7 @@ class ToolLoop:
                     intent=intent,
                     tenant_id=tenant_id,
                     on_round_end=on_round_end,
+                    should_cancel=should_cancel,
                 )
                 if tools_used:
                     prompt_result["tools_used"] = tools_used + prompt_result.get("tools_used", [])

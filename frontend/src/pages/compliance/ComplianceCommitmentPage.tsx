@@ -3,7 +3,9 @@ import { FileSignature, ShieldCheck, DoorClosed, DoorOpen } from 'lucide-react'
 import PageHeader from '@/components/data/PageHeader'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 import { useFetch } from '@/hooks/useFetch'
 import { useToast } from '@/hooks/useToast'
 import useAuthStore from '@/stores/auth'
@@ -75,7 +77,7 @@ export default function ComplianceCommitmentPage() {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5">
+        <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark p-5">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">培训</h2>
           <ul className="mt-3 space-y-2">
             {check?.trainings?.map((t) => (
@@ -87,7 +89,7 @@ export default function ComplianceCommitmentPage() {
           </ul>
         </div>
 
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5">
+        <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark p-5">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">考试</h2>
           <ul className="mt-3 space-y-2">
             {check?.exams?.map((e) => (
@@ -99,7 +101,7 @@ export default function ComplianceCommitmentPage() {
           </ul>
         </div>
 
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5">
+        <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark p-5">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">承诺</h2>
           <div className="mt-3 text-sm">
             {check?.commitment?.signed ? (
@@ -111,7 +113,7 @@ export default function ComplianceCommitmentPage() {
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5">
+      <div className="mt-4 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark p-5">
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
           {gate?.allowed ? <DoorOpen className="w-4 h-4 text-emerald-500" /> : <DoorClosed className="w-4 h-4 text-rose-500" />}
           准入门禁
@@ -145,25 +147,24 @@ export default function ComplianceCommitmentPage() {
         }
       >
         <div className="space-y-3">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">承诺类型</label>
-          <select
-            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+          <Select
+            label="承诺类型"
             value={form.commitment_type}
             onChange={(e) => setForm({ ...form, commitment_type: e.target.value })}
-          >
-            <option value="employment_ethics">职业操守承诺</option>
-            <option value="no_bribery">反商业贿赂承诺</option>
-            <option value="data_compliance">数据合规承诺</option>
-          </select>
+            options={[
+              { label: '职业操守承诺', value: 'employment_ethics' },
+              { label: '反商业贿赂承诺', value: 'no_bribery' },
+              { label: '数据合规承诺', value: 'data_compliance' },
+            ]}
+          />
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">承诺内容</label>
           <textarea
-            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm h-28"
+            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm h-28"
             value={form.commitment_text}
             onChange={(e) => setForm({ ...form, commitment_text: e.target.value })}
           />
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">版本</label>
-          <input
-            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+          <Input
+            label="版本"
             value={form.version}
             onChange={(e) => setForm({ ...form, version: e.target.value })}
           />

@@ -40,7 +40,12 @@ export interface DraftState {
 
 // useAIStream 返回值
 export interface UseAIStreamReturn {
-  streamMessage: (content: string, agent?: string, sessionId?: string) => Promise<void>
+  streamMessage: (
+    content: string,
+    agent?: string,
+    sessionId?: string,
+    intent?: string,
+  ) => Promise<void>
   isStreaming: boolean
   events: AIStreamEvent[]
   currentResponse: string
@@ -48,6 +53,8 @@ export interface UseAIStreamReturn {
   currentSkill: string | null
   // N+5：工作流 Skill done 事件携带的 draft_state（每次流式完成后更新）
   draftState: DraftState | null
+  /** 从历史会话 / 服务端 workspace 恢复草稿（不触发流式） */
+  hydrateDraft: (draft: DraftState | null) => void
   reset: () => void
 }
 
@@ -127,8 +134,12 @@ export function useAIStream(): UseAIStreamReturn {
     setIsStreaming(false)
   }, [])
 
+  const hydrateDraft = useCallback((draft: DraftState | null) => {
+    setDraftState(draft)
+  }, [])
+
   const streamMessage = useCallback(
-    async (content: string, agent?: string, sessionId?: string) => {
+    async (content: string, agent?: string, sessionId?: string, intent?: string) => {
       if (!content.trim()) return
       // 中断上一次未完成的流
       if (abortRef.current) {
@@ -163,6 +174,7 @@ export function useAIStream(): UseAIStreamReturn {
             agent,
             session_id: sessionId,
             stream: true,
+            ...(intent ? { intent } : {}),
           }),
           signal: controller.signal,
         })
@@ -248,7 +260,17 @@ export function useAIStream(): UseAIStreamReturn {
     []
   )
 
-  return { streamMessage, isStreaming, events, currentResponse, currentReasoning, currentSkill, draftState, reset }
+  return {
+    streamMessage,
+    isStreaming,
+    events,
+    currentResponse,
+    currentReasoning,
+    currentSkill,
+    draftState,
+    hydrateDraft,
+    reset,
+  }
 }
 
 export default useAIStream

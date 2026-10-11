@@ -15,6 +15,7 @@ import FormField from '@/components/forms/FormField'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { activityAPI } from '@/services/activity'
+import type { PageRes } from '@/types/page'
 
 // 培训活动
 interface TrainingActivity extends Record<string, unknown> {
@@ -31,12 +32,6 @@ interface TrainingActivity extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 活动状态映射
 const statusMap: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'error' }> = {

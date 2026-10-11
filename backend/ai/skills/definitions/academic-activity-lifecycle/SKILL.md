@@ -7,9 +7,13 @@ is_workflow: true
 allowed_tools:
   - fetch_activity_template
   - sync_activity_draft
+  - create_activity_record
+  - approve_activity_record
+  - attach_activity_protocol
   - submit_activity_checkin
   - submit_activity_expense
   - submit_activity_feedback
+  - archive_activity_record
   - validate_activity_gate
 phase: 2
 metadata:
@@ -35,9 +39,13 @@ activated_rules:
 activated_behaviors:
   - fetch_activity_template
   - sync_activity_draft
+  - create_activity_record
+  - approve_activity_record
+  - attach_activity_protocol
   - submit_activity_checkin
   - submit_activity_expense
   - submit_activity_feedback
+  - archive_activity_record
   - validate_activity_gate
 steps:
   - name: Step1
@@ -51,15 +59,15 @@ steps:
     primitives: [sync_activity_draft, validate_activity_gate]
     user_visible: 活动草稿预览 + 等待确认
   - name: Step3
-    description: 活动立项（调用 academic_activity_service.create_activity，触发 22 项规则校验）
+    description: 活动立项（create_activity_record，触发 22 项规则校验）
     gates: [G4]
-    primitives: [validate_activity_gate]
+    primitives: [create_activity_record, validate_activity_gate]
     user_visible: 立项结果 + 违规预警（如有）
   - name: Step4
-    description: 审批通过（推进到 approved 状态）
+    description: 审批通过（approve_activity_record → approved）
     gates: [G5]
-    primitives: [validate_activity_gate]
-    user_visible: 审批状态展示
+    primitives: [approve_activity_record, attach_activity_protocol, validate_activity_gate]
+    user_visible: 审批状态展示 + 协议挂接
   - name: Step5
     description: 签到证据提交（第 21 条三流合一：签到流）
     gates: [G6]
@@ -73,7 +81,7 @@ steps:
   - name: Step7
     description: 反馈与归档（含不良反应收集，第 21 条第（三）项）
     gates: [G8]
-    primitives: [submit_activity_feedback, validate_activity_gate]
+    primitives: [submit_activity_feedback, archive_activity_record, validate_activity_gate]
     user_visible: 反馈落库 + 归档完成提示
 gates:
   - name: G1
@@ -143,30 +151,32 @@ gates:
 
 ### Step3：活动立项（G4）
 
-1. 调用 service.create_activity 立项（含上岗准入校验 + 22 项规则校验）
+1. `create_activity_record()` — 从 draft.collection 立项（含上岗准入 + 22 项规则校验），写入 scenario_id
 2. `validate_activity_gate(gate="G4")` — 检查 scenario_id（activity_id）已落库
 
 **输出**：立项结果，违规预警（如有）。
 
 ### Step4：审批通过（G5）
 
-1. 调用 service.approve_activity 推进到 approved 状态
-2. `validate_activity_gate(gate="G5")` — 检查 title_bg.approved
+1. `approve_activity_record()` — 推进到 approved，写入 title_bg.approved
+2. （可选）`attach_activity_protocol(protocol={protocol_no: ...})` — 挂接协议流
+3. `validate_activity_gate(gate="G5")` — 检查 title_bg.approved
 
 ### Step5：签到证据提交（G6）
 
-1. `submit_activity_checkin(activity_id=..., checkin_evidence={...})` — 调 service.checkin（含 22 项规则校验）
-2. `validate_activity_gate(gate="G6")` — 检查签到证据已落库
+1. `submit_activity_checkin(checkin_evidence={...})` — activity_id 可省略（默认 draft.scenario_id）
+2. `validate_activity_gate(gate="G6")` — 检查 knowledge.checkin_count
 
 ### Step6：费用核销提交（G7）
 
-1. `submit_activity_expense(activity_id=..., expense_voucher={amount, type, ...})` — 调 service.submit_expense（含 22 项规则校验）
-2. `validate_activity_gate(gate="G7")` — 检查费用已落库
+1. `submit_activity_expense(expense_voucher={amount, type, ...})`
+2. `validate_activity_gate(gate="G7")` — 检查 knowledge.expense_count
 
 ### Step7：反馈与归档（G8）
 
-1. `submit_activity_feedback(activity_id=..., feedback="...", adverse_reactions=[...])` — 调 service.submit_feedback + service.archive_activity
-2. `validate_activity_gate(gate="G8")` — 检查 submit_confirmed
+1. `submit_activity_feedback(feedback="...", adverse_reactions=[...])` — 默认 auto_archive=true 一并归档
+2. （或）`archive_activity_record()` 单独归档
+3. `validate_activity_gate(gate="G8")` — 检查 submit_confirmed
 
 **输出**：归档完成提示，跳转指引。
 

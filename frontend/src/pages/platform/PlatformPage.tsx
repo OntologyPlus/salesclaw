@@ -6,6 +6,7 @@ import Badge from '@/components/ui/Badge'
 import { useFetch } from '@/hooks/useFetch'
 import { platformAPI } from '@/services/platform'
 import AIInsightPanel from '@/components/ai/AIInsightPanel'
+import type { PageRes } from '@/types/page'
 
 // 租户
 interface Tenant {
@@ -27,12 +28,6 @@ interface PlatformUser {
 }
 
 // 用户分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 总览数据
 interface PlatformOverview {

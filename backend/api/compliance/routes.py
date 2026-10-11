@@ -358,6 +358,45 @@ async def handle_violation_event(
     )
 
 
+@router.get("/audit-pack")
+async def get_audit_pack(
+    activity_id: Optional[int] = Query(None, description="学术活动 ID"),
+    violation_event_id: Optional[int] = Query(None, description="违规事件 ID"),
+    user_id: Optional[int] = Query(None, description="代表 user_id"),
+    download: bool = Query(False, description="true 时以 attachment JSON 下载"),
+    user: User = Depends(require_permission("compliance.read")),
+    db: Session = Depends(get_db),
+):
+    """合规稽查包：活动三流 + 违规 + 备案 + AuditLog 证据快照。"""
+    from services.audit_pack_service import build_audit_pack
+    import json as _json
+
+    pack = build_audit_pack(
+        db,
+        user.tenant_id,
+        activity_id=activity_id,
+        violation_event_id=violation_event_id,
+        user_id=user_id,
+    )
+    if download:
+        body = _json.dumps(pack, ensure_ascii=False, indent=2)
+        filename = "audit_pack"
+        if activity_id:
+            filename += f"_activity_{activity_id}"
+        elif violation_event_id:
+            filename += f"_violation_{violation_event_id}"
+        elif user_id:
+            filename += f"_user_{user_id}"
+        return Response(
+            content=body,
+            media_type="application/json; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}.json"',
+            },
+        )
+    return unified_response(pack)
+
+
 @router.get("/alerts")
 async def list_alerts(
     status: Optional[str] = Query(None),

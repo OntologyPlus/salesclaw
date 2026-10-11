@@ -151,5 +151,24 @@ export function useChatSessions(pageKey: string) {
     setCurrentId(null)
   }, [])
 
-  return { sessions, currentId, save, load, remove, createNew }
+  /** 取最近一条会话全文（用于页面刷新后自动恢复） */
+  const loadLatest = useCallback((): ChatSessionData | null => {
+    let latest: ChatSessionData | null = null
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k || !k.startsWith(storageKey + ':')) continue
+      const raw = localStorage.getItem(k)
+      if (!raw) continue
+      try {
+        const data = JSON.parse(raw) as ChatSessionData
+        if (!latest || data.updatedAt > latest.updatedAt) latest = data
+      } catch {
+        // skip
+      }
+    }
+    if (latest) setCurrentId(latest.id)
+    return latest
+  }, [storageKey])
+
+  return { sessions, currentId, save, load, remove, createNew, loadLatest }
 }

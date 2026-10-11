@@ -16,6 +16,7 @@ import Empty from '@/components/ui/Empty'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { collectionAPI } from '@/services/collection'
+import type { PageRes } from '@/types/page'
 
 // 采集项目
 interface CollectionProject extends Record<string, unknown> {
@@ -44,12 +45,6 @@ interface CollectionItem extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 项目状态映射
 const projectStatusMap: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {

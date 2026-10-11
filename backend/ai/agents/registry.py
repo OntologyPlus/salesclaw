@@ -170,10 +170,13 @@ _AGENT_DEFS = [
             "fetch_report_config", "sync_report_scope", "merge_report_outline",
             "aggregate_report_data", "generate_report_content",
             "validate_report_quality", "create_report_record", "validate_report_gate",
-            # v2.2 Phase 2：academic-activity-lifecycle 工作流原语（6 个，学术活动全生命周期）
+            # v2.2 Phase 2：academic-activity-lifecycle 工作流原语（10 个，学术活动全生命周期）
             "fetch_activity_template", "sync_activity_draft",
+            "create_activity_record", "approve_activity_record",
+            "attach_activity_protocol",
             "submit_activity_checkin", "submit_activity_expense",
-            "submit_activity_feedback", "validate_activity_gate",
+            "submit_activity_feedback", "archive_activity_record",
+            "validate_activity_gate",
         ],
         "skills": [
             "task-prioritizer", "approval-assistant",

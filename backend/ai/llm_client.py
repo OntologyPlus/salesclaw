@@ -62,11 +62,12 @@ class TokenBucket:
 # ──────────────────────────────────────────────
 
 class SemanticCache:
-    """语义缓存 - SQLite 持久化 + TF-IDF 相似度
+    """语义缓存 - 精确 hash + embedding 余弦相似度
 
+    Phase A：模糊匹配从 Jaccard 改为向量余弦（默认 hash embedder，零下载、低延迟）。
     策略：
     - 精确 hash 命中（O(1)）
-    - 模糊匹配：Jaccard 相似度 ≥ 阈值
+    - 模糊匹配：embedding cosine ≥ 阈值
     - TTL 1 小时
     """
 
@@ -74,28 +75,42 @@ class SemanticCache:
         self.ttl = timedelta(seconds=ttl_seconds)
         self.threshold = similarity_threshold
         self._lock = threading.Lock()
-        # 内存缓存：{cache_key: {response, query, ts, tokens_set}}
+        # 内存缓存：{cache_key: {response, query, ts, embedding}}
         self._store: dict[str, dict] = {}
+        self._embedder = None
+
+    def _get_embedder(self):
+        """延迟初始化：缓存专用 hash 后端，避免冷启动拉 qwen3。"""
+        if self._embedder is None:
+            try:
+                from embeddings import TextEmbedder
+                self._embedder = TextEmbedder(backend="hash", dim=256)
+            except Exception as e:
+                logger.debug("SemanticCache embedder 初始化失败: %s", e)
+                self._embedder = False
+        return self._embedder if self._embedder is not False else None
+
+    def _embed(self, text: str):
+        embedder = self._get_embedder()
+        if embedder is None or not text:
+            return None
+        try:
+            import numpy as np
+            vec = embedder.embed([text])[0]
+            return np.asarray(vec, dtype=np.float32)
+        except Exception as e:
+            logger.debug("SemanticCache embed 失败: %s", e)
+            return None
 
     @staticmethod
-    def _tokenize(text: str) -> set:
-        """简单分词：中文按字 + 英文按词"""
-        tokens = set()
-        for part in text.lower().split():
-            if any('\u4e00' <= c <= '\u9fff' for c in part):
-                # 中文：按字
-                tokens.update(part)
-            else:
-                tokens.add(part)
-        return tokens
-
-    @staticmethod
-    def _jaccard(set_a: set, set_b: set) -> float:
-        if not set_a or not set_b:
+    def _cosine(a, b) -> float:
+        if a is None or b is None:
             return 0.0
-        inter = len(set_a & set_b)
-        union = len(set_a | set_b)
-        return inter / union if union else 0.0
+        import numpy as np
+        a = np.asarray(a, dtype=np.float32).ravel()
+        b = np.asarray(b, dtype=np.float32).ravel()
+        denom = (float(np.linalg.norm(a)) * float(np.linalg.norm(b))) + 1e-12
+        return float(np.clip(np.dot(a, b) / denom, 0.0, 1.0))
 
     def _cache_key(self, query: str, intent: str = "") -> str:
         raw = f"{intent}:{query.strip().lower()}"
@@ -117,19 +132,20 @@ class SemanticCache:
                     "matched_query": entry["query"],
                 }
 
-            # 2. 模糊匹配（Jaccard）
-            query_tokens = self._tokenize(query)
+            # 2. 模糊匹配（embedding cosine）
+            query_vec = self._embed(query)
             best_score = 0.0
             best_entry = None
-            for stored in self._store.values():
-                if (now - stored["ts"]) >= self.ttl:
-                    continue
-                if stored.get("intent", "") != intent:
-                    continue
-                score = self._jaccard(query_tokens, stored["tokens"])
-                if score > best_score:
-                    best_score = score
-                    best_entry = stored
+            if query_vec is not None:
+                for stored in self._store.values():
+                    if (now - stored["ts"]) >= self.ttl:
+                        continue
+                    if stored.get("intent", "") != intent:
+                        continue
+                    score = self._cosine(query_vec, stored.get("embedding"))
+                    if score > best_score:
+                        best_score = score
+                        best_entry = stored
 
             if best_entry and best_score >= self.threshold:
                 return {
@@ -156,7 +172,7 @@ class SemanticCache:
                 "query": query,
                 "response": response,
                 "intent": intent,
-                "tokens": self._tokenize(query),
+                "embedding": self._embed(query),
                 "ts": datetime.utcnow(),
             }
             metrics_collector.record_cache_write()

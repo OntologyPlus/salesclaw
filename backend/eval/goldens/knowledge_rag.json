@@ -1,0 +1,13 @@
+{
+  "id": "knowledge_rag_basic",
+  "description": "知识库意图应路由到 KnowledgeAgent / rag 相关路径",
+  "input": {
+    "message": "产品说明书里关于适应症的问答在哪里",
+    "intent_override": "knowledge"
+  },
+  "expect": {
+    "intent": "knowledge",
+    "min_response_len": 5,
+    "must_not_contain": ["Traceback", "Internal Server Error"]
+  }
+}

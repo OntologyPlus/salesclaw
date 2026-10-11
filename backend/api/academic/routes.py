@@ -12,8 +12,15 @@ from core.response import unified_response
 from middleware.auth import get_current_user
 from database import User, get_db
 from services import academic_activity_service
+from services.compliance_service import get_user_role
 
 router = APIRouter(prefix="/academic")
+
+
+def _role_of(db, user: User) -> str:
+    """从用户角色表取 code；无角色时降级为 pharma_rep（代表端默认）。"""
+    code = get_user_role(db, user.id) if user and user.id else ""
+    return code or "pharma_rep"
 
 
 # ──────────────────────────────────────────────
@@ -116,10 +123,9 @@ async def create_activity(
             data["planned_at"] = datetime.fromisoformat(data["planned_at"])
         except (ValueError, TypeError):
             pass
-    role = "pharma_rep"  # TODO: 从 user.role 实际获取
     return unified_response(
         academic_activity_service.create_activity(
-            db, user.tenant_id, user.id, role, data,
+            db, user.tenant_id, user.id, _role_of(db, user), data,
         )
     )
 
@@ -134,7 +140,7 @@ async def approve_activity(
     """审批通过"""
     return unified_response(
         academic_activity_service.approve_activity(
-            db, user.tenant_id, activity_id, user.id, "compliance_officer",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
             req.approval_id, req.comment,
         )
     )
@@ -150,7 +156,7 @@ async def attach_protocol(
     """附加会议协议"""
     return unified_response(
         academic_activity_service.attach_protocol(
-            db, user.tenant_id, activity_id, user.id, "pharma_rep",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
             req.protocol,
         )
     )
@@ -166,7 +172,7 @@ async def checkin(
     """签到（含 22 项规则校验）"""
     return unified_response(
         academic_activity_service.checkin(
-            db, user.tenant_id, activity_id, user.id, "pharma_rep",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
             req.checkin_evidence,
         )
     )
@@ -182,7 +188,7 @@ async def submit_expense(
     """费用核销（含 22 项规则校验）"""
     return unified_response(
         academic_activity_service.submit_expense(
-            db, user.tenant_id, activity_id, user.id, "pharma_rep",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
             req.expense_voucher,
         )
     )
@@ -198,7 +204,7 @@ async def submit_feedback(
     """提交反馈（含不良反应收集，第 21 条第（三）项）"""
     return unified_response(
         academic_activity_service.submit_feedback(
-            db, user.tenant_id, activity_id, user.id, "pharma_rep",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
             req.feedback, req.adverse_reactions,
         )
     )
@@ -213,7 +219,7 @@ async def archive_activity(
     """归档"""
     return unified_response(
         academic_activity_service.archive_activity(
-            db, user.tenant_id, activity_id, user.id, "pharma_rep",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
         )
     )
 
@@ -228,7 +234,7 @@ async def cancel_activity(
     """取消学术活动"""
     return unified_response(
         academic_activity_service.cancel_activity(
-            db, user.tenant_id, activity_id, user.id, "pharma_rep",
+            db, user.tenant_id, activity_id, user.id, _role_of(db, user),
             req.reason,
         )
     )

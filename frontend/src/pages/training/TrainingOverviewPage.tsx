@@ -1,13 +1,15 @@
 import { Link } from 'react-router-dom'
 import {
   GraduationCap, BookOpen, FileText, Route, Award, UserCheck,
-  BarChart3, ArrowRight, Sparkles, AlertCircle, Clock, Star,
+  BarChart3, Sparkles, AlertCircle, Clock, Star, BadgeCheck,
 } from 'lucide-react'
 import PageHeader from '@/components/data/PageHeader'
 import StatCard from '@/components/data/StatCard'
 import Badge from '@/components/ui/Badge'
 import PageGrid from '@/components/layout/PageGrid'
 import SectionCard from '@/components/layout/SectionCard'
+import DomainNavGrid from '@/components/layout/DomainNavGrid'
+import { getNavItemsByPrefixes } from '@/config/navConfig'
 import ListSection from '@/components/layout/ListSection'
 import AIInsightBlock from '@/components/ai/AIInsightBlock'
 import AIInsightPanel from '@/components/ai/AIInsightPanel'
@@ -50,6 +52,7 @@ const difficultyMap: StatusMap = {
 }
 
 const entries = [
+  { path: '/training/onboarding', label: '对话式上岗备案', desc: '培训-考核-承诺闭环', icon: <BadgeCheck className="w-5 h-5" />, color: 'emerald' },
   { path: '/training/courses', label: '课程中心', desc: '浏览与选课', icon: <BookOpen className="w-5 h-5" />, color: 'brand' },
   { path: '/training/exams', label: '考试中心', desc: '参加考试测评', icon: <FileText className="w-5 h-5" />, color: 'blue' },
   { path: '/training/paths', label: '学习路径', desc: '体系化成长', icon: <Route className="w-5 h-5" />, color: 'emerald' },
@@ -186,6 +189,11 @@ export default function TrainingOverviewPage() {
           />
         </SectionCard>
       </div>
+
+      <DomainNavGrid
+        className="mt-6"
+        items={getNavItemsByPrefixes(['/training'], { excludeExact: ['/training'] })}
+      />
 
       {/* AI 学习建议（品牌特色卡片） */}
       <SectionCard title="AI 学习建议" icon={<Sparkles className="w-4 h-4" />} viewAllTo="/training/practice" className="mt-6">

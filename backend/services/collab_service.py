@@ -55,6 +55,30 @@ def get_overview(db: Session, tenant_id: str, user_id: int) -> dict:
         Announcement.tenant_id == tenant_id, Announcement.is_deleted == 0,
     ).order_by(Announcement.is_pinned.desc(), Announcement.published_at.desc()).limit(5).all()
 
+    # 学术推广活动统计（三流看板入口）
+    academic_activity_count = 0
+    academic_pending_approval = 0
+    academic_ongoing = 0
+    academic_archived = 0
+    try:
+        from database import AcademicActivity
+        aq = db.query(AcademicActivity).filter(
+            AcademicActivity.tenant_id == tenant_id,
+            AcademicActivity.is_deleted == 0,
+        )
+        academic_activity_count = aq.count()
+        academic_pending_approval = aq.filter(
+            AcademicActivity.status.in_(["draft", "pending_approval"]),
+        ).count()
+        academic_ongoing = aq.filter(
+            AcademicActivity.status.in_(["approved", "ongoing"]),
+        ).count()
+        academic_archived = aq.filter(
+            AcademicActivity.status.in_(["completed", "archived"]),
+        ).count()
+    except Exception:
+        pass
+
     return {
         "total_tasks": total_tasks,
         "pending_tasks": pending_tasks,
@@ -65,6 +89,10 @@ def get_overview(db: Session, tenant_id: str, user_id: int) -> dict:
             Announcement.tenant_id == tenant_id, Announcement.is_deleted == 0,
         ).count(),
         "recent_announcements": [_announcement_to_dict(a) for a in announcements],
+        "academic_activity_count": academic_activity_count,
+        "academic_pending_approval": academic_pending_approval,
+        "academic_ongoing": academic_ongoing,
+        "academic_archived": academic_archived,
     }
 
 

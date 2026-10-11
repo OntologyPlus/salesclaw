@@ -1,10 +1,6 @@
 /**
  * 消息响应操作（复制/重新生成/反馈）
- *
- * F15：挂在 assistant 消息气泡下方，hover 时显示。
- * - 复制：写入剪贴板，Toast 提示
- * - 重新生成：调用 onRegenerate（由父组件提供）
- * - 反馈：赞/踩，调用 onFeedback（v5.0 仅 console.log 占位）
+ * 反馈按钮仅在传入 onFeedback（已接后端）时展示，避免占位误导。
  */
 import { useState } from 'react'
 import { Copy, Check, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react'
@@ -33,9 +29,9 @@ export default function MessageActions({ content, onRegenerate, onFeedback }: Pr
   }
 
   const handleFeedback = (type: 'up' | 'down') => {
-    if (feedback) return // 已反馈过，避免重复
+    if (!onFeedback || feedback) return
     setFeedback(type)
-    onFeedback?.(type)
+    onFeedback(type)
     toast(type === 'up' ? '感谢好评' : '已记录反馈', 'info')
   }
 
@@ -43,7 +39,7 @@ export default function MessageActions({ content, onRegenerate, onFeedback }: Pr
 
   return (
     <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-      <button onClick={handleCopy} className={btnClass} title="复制">
+      <button type="button" onClick={handleCopy} className={btnClass} title="复制" aria-label="复制">
         {copied ? (
           <Check className="w-3.5 h-3.5 text-emerald-500" />
         ) : (
@@ -51,30 +47,38 @@ export default function MessageActions({ content, onRegenerate, onFeedback }: Pr
         )}
       </button>
       {onRegenerate && (
-        <button onClick={onRegenerate} className={btnClass} title="重新生成">
+        <button type="button" onClick={onRegenerate} className={btnClass} title="重新生成" aria-label="重新生成">
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
       )}
-      <button
-        onClick={() => handleFeedback('up')}
-        className={btnClass}
-        title="赞"
-        disabled={feedback !== null}
-      >
-        <ThumbsUp
-          className={`w-3.5 h-3.5 ${feedback === 'up' ? 'text-emerald-500' : ''}`}
-        />
-      </button>
-      <button
-        onClick={() => handleFeedback('down')}
-        className={btnClass}
-        title="踩"
-        disabled={feedback !== null}
-      >
-        <ThumbsDown
-          className={`w-3.5 h-3.5 ${feedback === 'down' ? 'text-rose-500' : ''}`}
-        />
-      </button>
+      {onFeedback && (
+        <>
+          <button
+            type="button"
+            onClick={() => handleFeedback('up')}
+            className={btnClass}
+            title="赞"
+            aria-label="有用"
+            disabled={feedback !== null}
+          >
+            <ThumbsUp
+              className={`w-3.5 h-3.5 ${feedback === 'up' ? 'text-emerald-500' : ''}`}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleFeedback('down')}
+            className={btnClass}
+            title="踩"
+            aria-label="无用"
+            disabled={feedback !== null}
+          >
+            <ThumbsDown
+              className={`w-3.5 h-3.5 ${feedback === 'down' ? 'text-rose-500' : ''}`}
+            />
+          </button>
+        </>
+      )}
     </div>
   )
 }

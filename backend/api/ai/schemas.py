@@ -7,6 +7,8 @@ class ChatSendRequest(BaseModel):
     agent: str | None = None
     session_id: str | None = None
     stream: bool = False
+    # 程序化意图覆盖（工作流 ChatPage 用于锁定 Skill，跳过分类器）
+    intent: str | None = None
 
 
 class ReasoningFeedbackRequest(BaseModel):
@@ -25,3 +27,8 @@ class CollaborateRequest(BaseModel):
     agents: list[str] | None = None  # 参与的 Agent 名称（auto 模式下自动判定）
     strategy: str = "merge"  # aggregate 模式的合并策略：merge / vote / best
     context: dict | None = None  # 额外上下文
+
+
+class RunResumeRequest(BaseModel):
+    """续跑中断的 Agent run"""
+    message: str | None = None  # 可选追加用户消息；空则仅从 checkpoint 续跑

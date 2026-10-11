@@ -4,6 +4,7 @@ import PageHeader from '@/components/data/PageHeader'
 import Empty from '@/components/ui/Empty'
 import useFetch from '@/hooks/useFetch'
 import { collabAPI } from '@/services/collab'
+import type { PageRes } from '@/types/page'
 
 interface AnnouncementItem {
   id: number
@@ -17,12 +18,6 @@ interface AnnouncementItem {
   created_at?: string
 }
 
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 const ANN_TYPE_CONFIG: Record<string, { label: string; cls: string }> = {
   urgent: { label: '紧急', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300' },

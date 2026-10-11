@@ -13,6 +13,7 @@ import FormField from '@/components/forms/FormField'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { salesAPI } from '@/services/sales'
+import type { PageRes } from '@/types/page'
 
 // 拜访记录行
 interface VisitRecord extends Record<string, unknown> {
@@ -31,12 +32,6 @@ interface VisitRecord extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 主数据选项
 interface Option { id: number; name: string }

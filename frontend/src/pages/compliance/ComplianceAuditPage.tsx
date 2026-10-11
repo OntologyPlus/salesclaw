@@ -58,14 +58,14 @@ export default function ComplianceAuditPage() {
         }
       />
 
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-surface-border-subtle-dark">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">年度审计报告</h2>
           <span className="text-xs text-slate-500 dark:text-slate-400">共 {data?.total ?? items.length} 份</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900/80">
+            <thead className="bg-slate-50 dark:bg-surface-card-dark/80">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">年度</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">结论</th>

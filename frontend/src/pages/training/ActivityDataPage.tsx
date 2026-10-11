@@ -17,6 +17,7 @@ import api from '@/services/api'
 import { activityAPI } from '@/services/activity'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
+import type { PageRes } from '@/types/page'
 
 // 活动概要
 interface ActivityItem extends Record<string, unknown> {
@@ -25,10 +26,6 @@ interface ActivityItem extends Record<string, unknown> {
 }
 
 // 活动列表响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-}
 
 // KPI 概要
 interface KpiSummary {

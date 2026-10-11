@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 16384
     # B13：工具调用模式 - auto（按 provider 自动）/ native（强制原生 function calling）/ prompt（强制降级）
     LLM_TOOL_CALL_MODE: str = "auto"
+    # Phase B：动态预算（可按 intent/skill 覆盖）
+    AI_DEFAULT_MAX_ROUNDS: int = 3
+    AI_COMPLEX_MAX_ROUNDS: int = 5
+    AI_WORKFLOW_MAX_ROUNDS: int = 8
+    AI_DEFAULT_MAX_LATENCY_MS: int = 90000
+    AI_COMPLEX_MAX_LATENCY_MS: int = 120000
+    AI_ENABLE_ACTION_GATEWAY: bool = True
+    AI_ENABLE_RUN_CHECKPOINT: bool = True
+    AI_ENABLE_OTEL_SPANS: bool = True
     # ──────────────────────────────────────────────
     # 嵌入配置（向量模型）
     # 当前：qwen3（modelscope Qwen3-Embedding-0.6B）

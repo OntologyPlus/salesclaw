@@ -6,6 +6,7 @@ import Empty from '@/components/ui/Empty'
 import useFetch from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { collabAPI } from '@/services/collab'
+import type { PageRes } from '@/types/page'
 
 interface ApprovalItem {
   id: number
@@ -22,12 +23,6 @@ interface ApprovalItem {
   created_at?: string
 }
 
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   pending: { label: '待审批', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },

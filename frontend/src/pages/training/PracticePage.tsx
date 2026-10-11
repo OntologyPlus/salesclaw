@@ -14,6 +14,7 @@ import Empty from '@/components/ui/Empty'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { trainingAPI } from '@/services/training'
+import type { PageRes } from '@/types/page'
 
 // 演练场景
 interface Scenario extends Record<string, unknown> {
@@ -31,12 +32,6 @@ interface Scenario extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 聊天消息
 interface ChatMessage {

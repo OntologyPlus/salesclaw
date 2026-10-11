@@ -21,6 +21,12 @@ export async function chatAbort(session_id: string): Promise<void> {
   await api.post<ApiResponse<null>>(`/ai/chat/${session_id}/abort`)
 }
 
+/** 读取工作流 SceneWorkspace 草稿（会话恢复） */
+export async function getWorkspaceDraft(session_id: string): Promise<Record<string, unknown> | null> {
+  const res = await api.get(`/ai/workspace/${encodeURIComponent(session_id)}`)
+  return (res.data?.data as Record<string, unknown>) ?? null
+}
+
 // 列出所有 Agent
 export async function listAgents(): Promise<Agent[]> {
   const res = await api.get<ApiResponse<Agent[]>>('/agents')

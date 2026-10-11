@@ -55,6 +55,9 @@ INTENT_KEYWORDS = [
     (["辖区", "territory", "达成率", "辖区本周", "辖区本月", "辖区数据"], "territory", "sales"),
     # N+5：培训场景创建（AI 原生工作流 Skill）
     (["创建场景", "新建场景", "建一个场景", "create scenario", "场景创建", "创建培训场景", "设计场景"], "scenario-create", "training"),
+    # Phase 功能深化：上岗备案 / 学术活动工作流
+    (["上岗备案", "上岗准入", "代表备案", "签署承诺书", "onboarding", "pharma_rep_onboarding", "备案提交"], "pharma_rep_onboarding", "training"),
+    (["学术活动", "学术推广", "活动立项", "活动签到", "活动费用", "academic_activity", "三流合一"], "academic_activity", "collab"),
 ]
 
 
@@ -111,6 +114,9 @@ INTENT_SKILL_MAP = {
     "insight": "insight-generator",
     # N+5：培训场景创建工作流
     "scenario-create": "scenario-generator",
+    # Phase 功能深化
+    "pharma_rep_onboarding": "pharma-rep-onboarding",
+    "academic_activity": "academic-activity-lifecycle",
 }
 
 
@@ -195,6 +201,17 @@ INTENT_RESPONSES = {
         "- 难度：中等\n"
         "是否需要开始演练？"
     ),
+    "pharma_rep_onboarding": (
+        "已进入医药代表上岗备案工作流。\n"
+        "将按门禁引导您完成：上岗清单核对 → 资质采集 → 承诺书签署 → 备案提交 → 准入校验 → 落库。\n"
+        "请回复「开始上岗备案」以拉取当前三件套状态。"
+    ),
+    "academic_activity": (
+        "已进入学术推广活动工作流。\n"
+        "将按门禁引导您完成：模板拉取 → 活动立项 → 审批 → 签到 → 费用核销 → 反馈归档（三流合一）。\n"
+        "请回复「发起一场学术讲座」并补充时间地点等信息。"
+    ),
+
     "kpi": (
         "KPI 监控概览：\n"
         "- 拜访达成率：92%（目标 90%，达标）\n"

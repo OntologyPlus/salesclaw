@@ -15,6 +15,7 @@ import Skeleton from '@/components/ui/Skeleton'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { collectionAPI } from '@/services/collection'
+import type { PageRes } from '@/types/page'
 
 // 待办任务
 interface ProjectTodo extends Record<string, unknown> {
@@ -54,12 +55,6 @@ interface SubmissionRes {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 待办状态映射
 const todoStatusMap: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {

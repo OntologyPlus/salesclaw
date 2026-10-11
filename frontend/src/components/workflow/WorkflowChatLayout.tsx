@@ -11,7 +11,7 @@
  * - 适用于任何 is_workflow=true 的 Skill（visit-planner / what-if-simulator / exam-generator 等）
  * - 复用 useAIStream Hook + DraftState 类型
  */
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Bot, Send, Sparkles, User, Zap, Brain, StopCircle,
   CheckCircle2, Circle, Lock, AlertCircle, ClipboardList, History,
@@ -63,6 +63,8 @@ export interface WorkflowChatLayoutProps {
   finalGateId: string
   // F14：会话持久化 key（不传则不持久化）；如 'scene-create' / 'visit-plan'
   pageKey?: string
+  // 程序化意图覆盖：锁定工作流 Skill，避免分类器误路由
+  intentOverride?: string
 }
 
 // 单条聊天消息
@@ -81,6 +83,21 @@ interface ChatMessage {
 
 function genId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+/** 从后端 SceneWorkspace 拉取完整草稿（localStorage 偏薄时补全） */
+async function fetchWorkspaceDraft(sessionId: string): Promise<DraftState | null> {
+  try {
+    const { default: api } = await import('@/services/api')
+    const r = await api.get(`/ai/workspace/${encodeURIComponent(sessionId)}`)
+    const data = r.data?.data
+    if (data && typeof data === 'object' && (data.current_step || data.gates_passed)) {
+      return data as DraftState
+    }
+  } catch {
+    // 静默降级：仅用本地草稿
+  }
+  return null
 }
 
 // 安全提取对象字段（避免 unknown 类型报错）
@@ -110,6 +127,7 @@ export default function WorkflowChatLayout({
   draftFieldRenderer,
   finalGateId,
   pageKey,
+  intentOverride,
 }: WorkflowChatLayoutProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -120,7 +138,7 @@ export default function WorkflowChatLayout({
   const toolsAccumRef = useRef<string[]>([])
 
   // F14：会话持久化（pageKey 为空时仍调用 hook 但不启用保存）
-  const { sessions, currentId, save, load, remove, createNew } = useChatSessions(pageKey || '__no_persist__')
+  const { sessions, currentId, save, load, remove, createNew, loadLatest } = useChatSessions(pageKey || '__no_persist__')
   const hasPersistence = Boolean(pageKey)
 
   // F18：错误提示 Toast
@@ -134,6 +152,7 @@ export default function WorkflowChatLayout({
     currentReasoning,
     currentSkill,
     draftState,
+    hydrateDraft,
     reset,
   } = useAIStream()
 
@@ -153,15 +172,53 @@ export default function WorkflowChatLayout({
     save(messages, draftState, sessionId)
   }, [messages, draftState, sessionId, hasPersistence, isStreaming, save])
 
-  // F14：加载历史会话
+  const restoreDraftFromSession = useCallback(
+    (data: { draftState: DraftState | null; messages: ChatMessage[]; sessionId?: string }) => {
+      let draft = data.draftState
+      if (!draft || (!draft.gates_passed?.length && !draft.collection && !draft.config)) {
+        // 回退：从最近一条带 draftSnapshot 的助手消息恢复
+        for (let i = data.messages.length - 1; i >= 0; i--) {
+          const snap = data.messages[i]?.draftSnapshot
+          if (snap && (snap.gates_passed?.length || snap.collection || snap.config || snap.scenario_id)) {
+            draft = snap
+            break
+          }
+        }
+      }
+      hydrateDraft(draft ?? null)
+
+      // 若本地草稿偏薄且有后端 session，尝试拉取 SceneWorkspace
+      const sid = data.sessionId
+      if (sid && (!draft?.collection && !draft?.config && !draft?.title_bg)) {
+        void fetchWorkspaceDraft(sid).then((remote) => {
+          if (remote) hydrateDraft(remote)
+        })
+      }
+    },
+    [hydrateDraft],
+  )
+
+  // F14：加载历史会话（含 draft 门禁进度）
   const handleLoadSession = (id: string) => {
     const data = load(id)
     if (!data) return
     setMessages(data.messages)
     setSessionId(data.sessionId)
-    // 注意：draftState 由 useAIStream 管理，无法直接 set；这里依赖后续 SSE 事件刷新
-    // 若需恢复 draftState，可考虑提升 draftState 到本组件 state（v6.0 改造）
+    restoreDraftFromSession(data)
   }
+
+  // 刷新后自动恢复最近会话
+  useEffect(() => {
+    if (!hasPersistence) return
+    if (messages.length > 0) return
+    const latest = loadLatest()
+    if (!latest || latest.messages.length === 0) return
+    setMessages(latest.messages)
+    setSessionId(latest.sessionId)
+    restoreDraftFromSession(latest)
+    // 仅挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPersistence])
 
   // F14：新建会话
   const handleNewSession = () => {
@@ -254,7 +311,7 @@ export default function WorkflowChatLayout({
     toolsAccumRef.current = []
 
     try {
-      await streamMessage(content, undefined, sessionId)
+      await streamMessage(content, undefined, sessionId, intentOverride)
     } catch (err) {
       const msg = err instanceof Error ? err.message : '请求失败'
       toast(`请求失败：${msg}`, 'error')
@@ -306,7 +363,7 @@ export default function WorkflowChatLayout({
     streamingMsgIdRef.current = newAssistant.id
     toolsAccumRef.current = []
     try {
-      await streamMessage(userContent, undefined, sessionId)
+      await streamMessage(userContent, undefined, sessionId, intentOverride)
     } catch (err) {
       const msg = err instanceof Error ? err.message : '请求失败'
       toast(`重新生成失败：${msg}`, 'error')
@@ -318,11 +375,6 @@ export default function WorkflowChatLayout({
         )
       )
     }
-  }
-
-  // F15：反馈占位（v5.0 不接后端，仅打日志）
-  const handleFeedback = (type: 'up' | 'down') => {
-    console.log('[feedback]', type, { sessionId })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -611,7 +663,6 @@ export default function WorkflowChatLayout({
                         <MessageActions
                           content={m.content}
                           onRegenerate={() => void handleRegenerate(m)}
-                          onFeedback={handleFeedback}
                         />
                       )}
                     </div>

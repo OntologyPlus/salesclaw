@@ -1,14 +1,17 @@
-"""增强 RAG 检索器 - SQLite 友好（关键词 LIKE + sklearn TF-IDF 融合排序）
+"""增强 RAG 检索器 - 关键词 LIKE + 向量语义（embeddings/sqlite-vec）+ TF-IDF 降级
 
 检索策略：
-1. 关键词检索（SQL LIKE）：搜索 KnowledgeDocument + FaqItem 表，按 title, summary, content, tags 多字段
-2. 语义检索（TF-IDF）：基于 sklearn TfidfVectorizer + cosine_similarity
-3. 融合排序：关键词匹配分 × 0.4 + 语义相似度 × 0.6
-4. 语义分块：按段落 + 标题边界分块，支持 overlap
+1. 关键词检索（SQL LIKE）：搜索 KnowledgeDocument + FaqItem 表
+2. 语义检索（主路径）：TextEmbedder + 余弦 / VectorStore(sqlite-vec) 缓存
+3. 语义检索（降级）：sklearn TF-IDF + cosine_similarity
+4. 融合排序：关键词匹配分 × 0.4 + 语义相似度 × 0.6
+5. 语义分块：按段落 + 标题边界分块，支持 overlap
 
-B6：TF-IDF fit 缓存 - 相同候选集（hash 命中）跳过 fit_transform，直接用缓存的 matrix。
+B6：TF-IDF fit 缓存 - 相同候选集（hash 命中）跳过 fit_transform。
+Phase A：语义主路径切换为 embedding；TF-IDF 仅作降级。
 """
 import hashlib
+import logging
 import re
 
 import numpy as np
@@ -17,9 +20,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from database import KnowledgeDocument, FaqItem
 
+logger = logging.getLogger(__name__)
+
 
 class EnhancedRAGRetriever:
-    """增强 RAG 检索器 - SQLite 友好，无需向量数据库"""
+    """增强 RAG 检索器 - 向量语义主路径，TF-IDF 降级"""
 
     # 融合排序权重
     KEYWORD_WEIGHT = 0.4
@@ -37,7 +42,7 @@ class EnhancedRAGRetriever:
     }
 
     def __init__(self):
-        # TF-IDF 向量化器：使用自定义中文分词器
+        # TF-IDF 向量化器：使用自定义中文分词器（降级路径）
         self._vectorizer = TfidfVectorizer(
             tokenizer=self._tokenize,
             token_pattern=None,  # 禁用默认 pattern，使用自定义 tokenizer
@@ -48,6 +53,29 @@ class EnhancedRAGRetriever:
         # B6：fit 缓存 - 相同候选集 hash 命中时复用 tfidf_matrix
         self._fitted_hash: str = ""
         self._cached_candidate_vecs = None  # 缓存的候选向量矩阵（query 向量需每次重算）
+        self._embedder = None
+        self._vector_store = None
+        self._embedder_failed = False
+
+    def _get_embedder(self):
+        """延迟加载 TextEmbedder；失败后标记并走 TF-IDF。"""
+        if self._embedder_failed:
+            return None
+        if self._embedder is not None:
+            return self._embedder
+        try:
+            from embeddings import TextEmbedder, VectorStore
+            from config import settings
+            self._embedder = TextEmbedder()
+            self._vector_store = VectorStore(
+                db_path=settings.VEC_DB_PATH,
+                dim=self._embedder.dim,
+            )
+            return self._embedder
+        except Exception as e:
+            logger.warning("RAG embedder 初始化失败，降级 TF-IDF: %s", e)
+            self._embedder_failed = True
+            return None
 
     # ──────────────────────────────────────────────
     # 主入口
@@ -73,8 +101,11 @@ class EnhancedRAGRetriever:
         if not candidates:
             return []
 
-        # 预计算 TF-IDF 语义相似度（基于当前候选集）
-        semantic_scores = self._compute_semantic_scores(query, candidates)
+        # Phase A：优先 embedding 语义分；失败则 TF-IDF
+        semantic_scores, semantic_backend = self._compute_vector_scores(query, candidates, tid)
+        if semantic_scores is None:
+            semantic_scores = self._compute_semantic_scores(query, candidates)
+            semantic_backend = "tfidf"
 
         # 融合打分：关键词匹配分 × 0.4 + 语义相似度 × 0.6
         for idx, candidate in enumerate(candidates):
@@ -83,11 +114,56 @@ class EnhancedRAGRetriever:
             candidate["score"] = round(
                 self.KEYWORD_WEIGHT * kw_score + self.SEMANTIC_WEIGHT * sem_score, 4,
             )
+            candidate["semantic_backend"] = semantic_backend
 
         # 排序并取 top_k（过滤零分结果）
         scored = [c for c in candidates if c["score"] > 0]
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
+
+    def _item_id(self, candidate: dict, tenant_id: str) -> str:
+        ctype = candidate.get("type", "doc")
+        doc_id = candidate.get("doc_id", 0)
+        idx = candidate.get("_idx", 0)
+        return f"{tenant_id}:{ctype}:{doc_id}:{idx}"
+
+    def _compute_vector_scores(
+        self, query: str, candidates: list[dict], tenant_id: str
+    ):
+        """用 TextEmbedder 对 query+候选打分，并写入 VectorStore 供后续复用。
+
+        Returns:
+            (scores ndarray | None, backend_name)
+        """
+        embedder = self._get_embedder()
+        if embedder is None or not candidates:
+            return None, "none"
+
+        try:
+            texts = [
+                f"{c.get('title', '')} {c.get('content', '')}".strip() or " "
+                for c in candidates
+            ]
+            matrix = embedder.embed([query] + texts)
+            q = np.asarray(matrix[0], dtype=np.float32).ravel()
+            docs = np.asarray(matrix[1:], dtype=np.float32)
+            qn = float(np.linalg.norm(q)) + 1e-12
+            dn = np.linalg.norm(docs, axis=1) + 1e-12
+            sims = (docs @ q) / (dn * qn)
+            sims = np.clip(np.nan_to_num(sims, nan=0.0), 0.0, 1.0)
+
+            # 旁路写入 sqlite-vec，便于后续索引命中（失败忽略）
+            if self._vector_store is not None:
+                try:
+                    for i, c in enumerate(candidates):
+                        self._vector_store.add(self._item_id(c, tenant_id), docs[i])
+                except Exception as e:
+                    logger.debug("RAG VectorStore 写入跳过: %s", e)
+
+            return sims, f"embed:{embedder.backend}"
+        except Exception as e:
+            logger.warning("RAG 向量打分失败，降级 TF-IDF: %s", e)
+            return None, "none"
 
     def search(self, query: str, tenant_id, db, top_k: int = 5) -> dict:
         """检索（带元信息）

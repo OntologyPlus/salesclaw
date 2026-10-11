@@ -165,8 +165,8 @@ export default function ComplianceProfilePage() {
         }
       />
 
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-surface-border-subtle-dark">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">资质档案</h2>
         </div>
         {loading ? (
@@ -213,28 +213,28 @@ export default function ComplianceProfilePage() {
       >
         <div className="space-y-3">
           <Field label="证件类型">
-            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.id_card_type} onChange={(e) => setForm({ ...form, id_card_type: e.target.value })} />
+            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.id_card_type} onChange={(e) => setForm({ ...form, id_card_type: e.target.value })} />
           </Field>
           <Field label="学历">
-            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.education_level} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="大专/本科/硕士/博士" />
+            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.education_level} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="大专/本科/硕士/博士" />
           </Field>
           <Field label="专业">
-            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.major} onChange={(e) => setForm({ ...form, major: e.target.value })} />
+            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.major} onChange={(e) => setForm({ ...form, major: e.target.value })} />
           </Field>
           <Field label="合同开始">
-            <input type="date" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.contract_start} onChange={(e) => setForm({ ...form, contract_start: e.target.value })} />
+            <input type="date" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.contract_start} onChange={(e) => setForm({ ...form, contract_start: e.target.value })} />
           </Field>
           <Field label="合同结束">
-            <input type="date" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.contract_end} onChange={(e) => setForm({ ...form, contract_end: e.target.value })} />
+            <input type="date" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.contract_end} onChange={(e) => setForm({ ...form, contract_end: e.target.value })} />
           </Field>
           <Field label="负责药品类别（、分隔）">
-            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.drug_categories} onChange={(e) => setForm({ ...form, drug_categories: e.target.value })} />
+            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.drug_categories} onChange={(e) => setForm({ ...form, drug_categories: e.target.value })} />
           </Field>
           <Field label="治疗领域（、分隔）">
-            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.therapeutic_areas} onChange={(e) => setForm({ ...form, therapeutic_areas: e.target.value })} />
+            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.therapeutic_areas} onChange={(e) => setForm({ ...form, therapeutic_areas: e.target.value })} />
           </Field>
           <Field label="授权区域（、分隔）">
-            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.authorized_regions} onChange={(e) => setForm({ ...form, authorized_regions: e.target.value })} />
+            <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.authorized_regions} onChange={(e) => setForm({ ...form, authorized_regions: e.target.value })} />
           </Field>
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <input type="checkbox" checked={form.has_bribery_record} onChange={(e) => setForm({ ...form, has_bribery_record: e.target.checked })} />
@@ -242,7 +242,7 @@ export default function ComplianceProfilePage() {
           </label>
           {form.has_bribery_record && (
             <Field label="记录说明">
-              <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.bribery_record_detail} onChange={(e) => setForm({ ...form, bribery_record_detail: e.target.value })} />
+              <input className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-surface-card-dark px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400" value={form.bribery_record_detail} onChange={(e) => setForm({ ...form, bribery_record_detail: e.target.value })} />
             </Field>
           )}
         </div>

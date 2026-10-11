@@ -15,6 +15,7 @@ import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { salesAPI } from '@/services/sales'
 import { trainingAPI } from '@/services/training'
+import type { PageRes } from '@/types/page'
 
 // 覆盖分通行
 interface Coverage extends Record<string, unknown> {
@@ -32,12 +33,6 @@ interface Coverage extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 主数据
 interface Option { id: number; name: string }

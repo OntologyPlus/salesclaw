@@ -6,14 +6,9 @@ export interface ApiResponse<T = unknown> {
   trace_id: string
 }
 
-// 分页响应
-export interface PageResponse<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
-  total_pages: number
-}
+// 分页响应（与 types/page.PageRes 对齐；字段均为可选以兼容各接口）
+export type { PageRes as PageResponse } from './page'
+export type { PageRes } from './page'
 
 // 用户
 export interface User {

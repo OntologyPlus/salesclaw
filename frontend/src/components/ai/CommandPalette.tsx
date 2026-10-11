@@ -1,15 +1,18 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, CornerDownLeft, ArrowUp, ArrowDown, Moon, Sun } from 'lucide-react'
 import useCommandPaletteStore from '@/stores/commandPalette'
 import useAppStore from '@/stores/app'
 import { useTheme } from '@/hooks/useTheme'
 import useAIAssistantStore from '@/stores/aiAssistant'
+import { allNavItems, navGroups } from '@/config/navConfig'
 import type { CommandItem } from '@/types'
 
-// 全局命令面板，⌘K 触发
+// 全局命令面板，⌘K 触发；导航索引来自 navConfig.allNavItems
 export default function CommandPalette() {
+  const { t } = useTranslation()
   const open = useCommandPaletteStore((s) => s.open)
   const query = useCommandPaletteStore((s) => s.query)
   const setOpen = useCommandPaletteStore((s) => s.setOpen)
@@ -47,38 +50,35 @@ export default function CommandPalette() {
     }
   }, [open, setQuery])
 
-  // 构建命令列表
+  const groupTitleByPath = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const g of navGroups) {
+      const title = t(g.titleKey)
+      for (const item of g.items) map.set(item.path, title)
+    }
+    return map
+  }, [t])
+
+  // 构建命令列表：全量 navConfig + 主题/AI 操作
   const commands: CommandItem[] = useMemo(() => {
-    const navItems: CommandItem[] = [
-      { id: 'portal', label: '门户', group: '导航', keywords: 'portal 门户', action: () => navigate('/portal') },
-      { id: 'sales', label: '销售总览', group: '导航', keywords: 'sales 销售', action: () => navigate('/sales') },
-      { id: 'sales-plans', label: '拜访计划', group: '导航', keywords: 'plans 拜访计划', action: () => navigate('/sales/plans') },
-      { id: 'sales-records', label: '拜访记录', group: '导航', keywords: 'records 拜访记录', action: () => navigate('/sales/records') },
-      { id: 'sales-feedback', label: '拜访反馈', group: '导航', keywords: 'feedback 拜访反馈', action: () => navigate('/sales/feedback') },
-      { id: 'sales-coverage', label: '覆盖分管', group: '导航', keywords: 'coverage 覆盖', action: () => navigate('/sales/coverage') },
-      { id: 'sales-scoring', label: '积分管理', group: '导航', keywords: 'scoring 积分', action: () => navigate('/sales/scoring') },
-      { id: 'sales-matrix', label: '矩阵看板', group: '导航', keywords: 'matrix 矩阵', action: () => navigate('/sales/matrix') },
-      { id: 'sales-roi', label: 'ROI 分析', group: '导航', keywords: 'roi', action: () => navigate('/sales/roi') },
-      { id: 'training', label: '智能培训', group: '导航', keywords: 'training 培训', action: () => navigate('/training') },
-      { id: 'decision', label: '决策支持', group: '导航', keywords: 'decision 决策', action: () => navigate('/decision') },
-      { id: 'collab', label: '协同办公', group: '导航', keywords: 'collab 协同', action: () => navigate('/collab') },
-      { id: 'knowledge', label: '知识库', group: '导航', keywords: 'knowledge 知识库', action: () => navigate('/knowledge') },
-      { id: 'crm', label: '客户关系', group: '导航', keywords: 'crm 客户', action: () => navigate('/crm') },
-      { id: 'cfm', label: '会议论坛', group: '导航', keywords: 'cfm 会议', action: () => navigate('/cfm') },
-      { id: 'tools', label: '内容工具', group: '导航', keywords: 'tools 工具', action: () => navigate('/tools') },
-      { id: 'platform', label: '平台管理', group: '导航', keywords: 'platform 平台', action: () => navigate('/platform') },
-      { id: 'mdm', label: '主数据', group: '导航', keywords: 'mdm 主数据', action: () => navigate('/mdm') },
-      { id: 'settings', label: '设置', group: '导航', keywords: 'settings 设置', action: () => navigate('/settings') },
-      { id: 'audit', label: '审计', group: '导航', keywords: 'audit 审计', action: () => navigate('/audit') },
-      { id: 'observability', label: '可观测', group: '导航', keywords: 'observability 可观测', action: () => navigate('/observability') },
-      { id: 'ai', label: 'AI 助手', group: '导航', keywords: 'ai 助手', action: () => navigate('/ai') },
-    ]
+    const navItems: CommandItem[] = allNavItems.map((item) => {
+      const zh = item.label
+      const en = t(item.labelKey, { lng: 'en', defaultValue: item.label })
+      const label = t(item.labelKey, { defaultValue: item.label })
+      return {
+        id: item.path,
+        label,
+        group: groupTitleByPath.get(item.path) || t('nav.group.moreTools'),
+        keywords: `${item.path} ${zh} ${en} ${item.labelKey}`,
+        action: () => navigate(item.path),
+      }
+    })
     const actionItems: CommandItem[] = [
       {
         id: 'toggle-theme',
-        label: theme === 'light' ? '切换到深色模式' : '切换到浅色模式',
-        group: '操作',
-        keywords: 'theme 主题 dark light',
+        label: theme === 'light' ? t('common.dark') : t('common.light'),
+        group: t('common.actions'),
+        keywords: 'theme dark light 主题',
         action: () => {
           toggleTheme()
           applyToggle()
@@ -86,21 +86,21 @@ export default function CommandPalette() {
       },
       {
         id: 'open-ai',
-        label: '打开 AI 助手',
-        group: '操作',
+        label: t('common.aiAssistant'),
+        group: t('common.actions'),
         keywords: 'ai assistant 助手',
         action: () => toggleAIPanel(),
       },
+      {
+        id: 'profile',
+        label: t('nav.profile'),
+        group: t('common.actions'),
+        keywords: 'profile 画像',
+        action: () => navigate('/profile'),
+      },
     ]
-    const agentItems: CommandItem[] = [
-      { id: 'agent-supervisor', label: 'Supervisor Agent', group: 'AI Agent', keywords: 'supervisor 默认', action: () => toggleAIPanel() },
-      { id: 'agent-visit', label: '销售助手 Agent', group: 'AI Agent', keywords: 'visit 销售', action: () => toggleAIPanel() },
-      { id: 'agent-course', label: '培训助手 Agent', group: 'AI Agent', keywords: 'course 培训', action: () => toggleAIPanel() },
-      { id: 'agent-kpi', label: '决策助手 Agent', group: 'AI Agent', keywords: 'kpi 决策', action: () => toggleAIPanel() },
-      { id: 'agent-rag', label: '知识助手 Agent', group: 'AI Agent', keywords: 'rag 知识', action: () => toggleAIPanel() },
-    ]
-    return [...navItems, ...actionItems, ...agentItems]
-  }, [navigate, theme, toggleTheme, applyToggle, toggleAIPanel])
+    return [...navItems, ...actionItems]
+  }, [navigate, theme, toggleTheme, applyToggle, toggleAIPanel, t, groupTitleByPath])
 
   // 过滤
   const filtered = useMemo(() => {
@@ -171,7 +171,8 @@ export default function CommandPalette() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="搜索页面、功能或命令..."
+                placeholder={t('common.commandPlaceholder')}
+                aria-label={t('common.openCommandPalette')}
                 className="flex-1 h-14 bg-transparent text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
               />
               <kbd className="px-1.5 py-0.5 text-xs rounded bg-slate-100 dark:bg-slate-700 text-slate-400 font-mono">ESC</kbd>

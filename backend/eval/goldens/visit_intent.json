@@ -1,0 +1,13 @@
+{
+  "id": "visit_intent_override",
+  "description": "程序化 intent=visit 应稳定进入 visit 意图",
+  "input": {
+    "message": "帮我看看本周拜访安排",
+    "intent_override": "visit"
+  },
+  "expect": {
+    "intent": "visit",
+    "min_response_len": 5,
+    "must_not_contain": ["Traceback"]
+  }
+}

@@ -17,6 +17,7 @@
     "profile": "My Profile",
     "sales": "Sales Overview",
     "training": "Training Overview",
+    "onboardingChat": "Onboarding Chat",
     "decision": "Decision Overview",
     "decisionKpi": "KPI Dashboard",
     "decisionAttribution": "Attribution",
@@ -27,6 +28,8 @@
     "decisionFollowup": "Follow-up Loop",
     "decisionParadigms": "Paradigm Library",
     "collab": "Collaboration",
+    "academicChat": "Academic Activity Chat",
+    "academicBoard": "Academic Streams Board",
     "collabTasks": "Tasks",
     "collabApprovals": "Approvals",
     "collabAnnouncements": "Announcements",
@@ -37,6 +40,15 @@
     "cfm": "Meetings",
     "tools": "Tools",
     "ai": "AI Assistant",
+    "complianceOverview": "Compliance",
+    "complianceProfile": "Rep Registration",
+    "complianceCommitment": "Commitment",
+    "complianceViolation": "Violations",
+    "complianceAuditPack": "Audit Pack",
+    "complianceForbidden": "Forbidden Behaviors",
+    "complianceDisclosure": "Disclosures",
+    "complianceSubmission": "Regulatory Submissions",
+    "complianceAudit": "Annual Audit",
     "platform": "Platform",
     "mdm": "Master Data",
     "settings": "Settings",
@@ -75,7 +87,8 @@
       "decision": "Decisions",
       "collab": "Collaboration & Knowledge",
       "relationship": "Relationships",
-      "moreTools": "More Tools"
+      "moreTools": "More Tools",
+      "compliance": "Compliance"
     }
   },
   "common": {
@@ -101,7 +114,16 @@
     "dark": "Dark",
     "logout": "Sign Out",
     "profile": "Profile",
-    "commandPlaceholder": "Search pages, features or commands..."
+    "commandPlaceholder": "Search pages, features or commands...",
+    "collapseSidebar": "Collapse",
+    "expandSidebar": "Expand sidebar",
+    "allCapabilities": "All capabilities",
+    "capabilityMatrix": "Capability matrix",
+    "moreCapabilities": "More capabilities",
+    "coreCapability": "Core workflow",
+    "extendedCapability": "Extended capability",
+    "openCommandPalette": "Open command palette",
+    "aiAssistant": "AI assistant"
   },
   "portal": {
     "welcome": "Welcome back",

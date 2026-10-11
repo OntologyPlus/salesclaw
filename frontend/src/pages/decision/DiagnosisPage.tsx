@@ -1,8 +1,12 @@
-import { useState, useEffect } from "react"
-import { Brain, Cpu, GitBranch, Clock, ShieldCheck, Zap, ChevronDown } from "lucide-react"
-import { decisionAPI } from "../../services/decision"
-import type { DiagnosisEntity, ProvenanceInfo, ActionSuggestion } from "../../types"
-import { SignalCard } from "../../components/decision/SignalCard"
+import { useState, useEffect } from 'react'
+import { Brain, Cpu, GitBranch, Clock, ShieldCheck, Zap, ChevronDown } from 'lucide-react'
+import PageHeader from '@/components/data/PageHeader'
+import Button from '@/components/ui/Button'
+import Select from '@/components/ui/Select'
+import Empty from '@/components/ui/Empty'
+import { decisionAPI } from '@/services/decision'
+import type { DiagnosisEntity, ProvenanceInfo, ActionSuggestion } from '@/types'
+import { SignalCard } from '@/components/decision/SignalCard'
 
 // OAG 置信度档位 🟢/🟡/🔴 配色（对齐方案）
 const bandMeta: Record<string, { dot: string; text: string }> = {
@@ -42,9 +46,9 @@ function SourceBadge({ provenance }: { provenance: ProvenanceInfo | null }) {
 function ProvenanceBadge({ provenance }: { provenance: ProvenanceInfo | null }) {
   if (!provenance) return null
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+    <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/15 px-2 py-0.5 text-[10px] font-medium text-brand-600 dark:text-brand-300">
       <GitBranch size={11} />
-      血缘 run#{provenance.run_id ?? "-"}
+      血缘 run#{provenance.run_id ?? '-'}
     </span>
   )
 }
@@ -317,7 +321,7 @@ export function DiagnosisPage() {
                   disabled={busy !== null}
                   onClick={() => runAction(act)}
                   title={act.description}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 transition hover:bg-brand-100 disabled:opacity-50 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300 dark:hover:bg-brand-500/20"
                 >
                   {act.risk_level && (
                     <span
@@ -356,58 +360,54 @@ export function DiagnosisPage() {
   }
 
   return (
-    <div className="min-h-screen p-6 text-slate-900 dark:text-slate-100">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold">
-              <Brain className="text-cyan-400" /> AI 诊断中枢
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              本体驱动 · 经 Orchestrator 七步编排 · 合规闸门（AI 仅生成草稿）
-            </p>
-          </div>
+    <div>
+      <PageHeader
+        title="AI 诊断中枢"
+        description="本体驱动 · 经 Orchestrator 七步编排 · 合规闸门（AI 仅生成草稿）"
+        breadcrumbs={[{ label: '智能决策' }, { label: '统一诊断' }]}
+        icon={<Brain className="w-5 h-5" />}
+        actions={
           <div className="flex items-center gap-3">
-            <select
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-            >
-              <option value="coverage">覆盖域</option>
-              <option value="compliance">合规域</option>
-              <option value="growth">增长域</option>
-            </select>
-            <button
+            <div className="w-36">
+              <Select
+                aria-label="诊断领域"
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                options={[
+                  { label: '覆盖域', value: 'coverage' },
+                  { label: '合规域', value: 'compliance' },
+                  { label: '增长域', value: 'growth' },
+                ]}
+              />
+            </div>
+            <Button
               onClick={async () => {
                 const r = await decisionAPI.aiDiagnose(domain)
                 handleDiagnosed(r)
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500/80 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-400"
             >
               <Zap size={15} /> 运行 AI 诊断
-            </button>
+            </Button>
           </div>
-        </header>
+        }
+      />
 
-        {loading ? (
-          <div className="text-slate-500 dark:text-slate-400">加载诊断…</div>
-        ) : diagnoses.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-            暂无诊断草稿，点击「运行 AI 诊断」启动编排器
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            {diagnoses.map((d) => (
-              <DiagnosisCardView
-                key={d.id}
-                d={d}
-                onAction={load}
-                onSignalCleared={handleSignalCleared}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="text-slate-500 dark:text-slate-400">加载诊断…</div>
+      ) : diagnoses.length === 0 ? (
+        <Empty description="暂无诊断草稿，点击「运行 AI 诊断」启动编排器" />
+      ) : (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {diagnoses.map((d) => (
+            <DiagnosisCardView
+              key={d.id}
+              d={d}
+              onAction={load}
+              onSignalCleared={handleSignalCleared}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   GraduationCap, Sparkles, CalendarCheck, FileText, Map,
-  Award, TrendingUp, Clock, BookOpen, Send, Loader2, Bot,
-  ChevronRight, Zap, Link2,
+  Award, TrendingUp, BookOpen, Send, Loader2, Bot,
+  ChevronRight, Zap, Link2, BadgeCheck, MessageSquarePlus, CalendarDays, Package,
 } from 'lucide-react'
 import useAuthStore from '@/stores/auth'
 import StatCard from '@/components/data/StatCard'
@@ -13,9 +12,9 @@ import { useFetch } from '@/hooks/useFetch'
 import { portalAPI } from '@/services/sales'
 import { chatSend } from '@/services/ai'
 import Skeleton from '@/components/ui/Skeleton'
+import ErrorState from '@/components/ui/ErrorState'
 import PageAIContextBar from '@/components/ai/PageAIContextBar'
 import SectionCard from '@/components/layout/SectionCard'
-import ListSection from '@/components/layout/ListSection'
 import PageGrid from '@/components/layout/PageGrid'
 import api from '@/services/api'
 
@@ -165,7 +164,7 @@ function PortalAIChat() {
   }, [messages])
 
   return (
-    <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
       {/* 头部 */}
       <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-200 dark:border-surface-border-subtle-dark">
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 flex items-center justify-center ai-pulse">
@@ -227,7 +226,7 @@ function PortalAIChat() {
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(input) } }}
             placeholder="输入你的问题..."
             disabled={loading}
-            className="flex-1 h-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
+            className="flex-1 h-9 rounded-xl border border-slate-200 dark:border-surface-border-subtle-dark bg-white dark:bg-surface-card-dark px-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50"
           />
           <button
             onClick={() => handleSend(input)}
@@ -247,15 +246,16 @@ export default function PortalPage() {
   const user = useAuthStore((s) => s.user)
 
   // 获取门户概览数据
-  const { data: overview, loading: overviewLoading } = useFetch<PortalOverview>(
+  const { data: overview, loading: overviewLoading, error: overviewError, refetch: refetchOverview } = useFetch<PortalOverview>(
     () => portalAPI.getOverview(),
     []
   )
   // 获取最近活动
-  const { data: activitiesResp, loading: activitiesLoading } = useFetch<{ items: Activity[] } | Activity[]>(
+  const { data: activitiesResp, loading: activitiesLoading, error: activitiesError, refetch: refetchActivities } = useFetch<{ items: Activity[] } | Activity[]>(
     () => portalAPI.getActivities(),
     []
   )
+  const portalError = overviewError || activitiesError
 
   // AI 简报
   const [briefing, setBriefing] = useState<AIBriefing | null>(null)
@@ -387,11 +387,48 @@ export default function PortalPage() {
       {/* AI 状态条 */}
       <PageAIContextBar />
 
+      {portalError && (
+        <ErrorState
+          message={portalError.message}
+          onRetry={() => {
+            refetchOverview()
+            refetchActivities()
+          }}
+        />
+      )}
+
+      {/* 合规与学术快捷入口 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { to: '/training/onboarding', label: '对话式上岗备案', desc: '培训-考核-承诺', icon: BadgeCheck },
+          { to: '/collab/academic-chat', label: '对话式学术活动', desc: '门禁驱动全流程', icon: MessageSquarePlus },
+          { to: '/collab/academic-board', label: '学术三流看板', desc: '协议·签到·费用', icon: CalendarDays },
+          { to: '/compliance/audit-pack', label: '稽查包导出', desc: '三流合一证据', icon: Package },
+        ].map((item) => {
+          const Icon = item.icon
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="flex items-start gap-3 rounded-2xl border border-slate-200 dark:border-surface-border-subtle-dark bg-white dark:bg-surface-card-dark p-4 hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300 shrink-0">
+                <Icon className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{item.label}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.desc}</div>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+
       {/* ====== A1: AI 晨间简报卡片 ====== */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6"
+        className="relative overflow-hidden rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark p-6"
       >
         {/* 顶部柔和渐变装饰，保留晨报质感但统一边框 */}
         <div className="absolute inset-0 bg-gradient-to-r from-brand-500/5 via-transparent to-violet-500/5 dark:from-brand-500/10 dark:to-violet-500/10 pointer-events-none" />
@@ -417,7 +454,7 @@ export default function PortalPage() {
               </h1>
 
               {/* AI 简报摘要 */}
-              <div className="mt-3 flex items-start gap-2 max-w-2xl rounded-xl bg-slate-50 dark:bg-slate-800 p-3 border border-slate-200 dark:border-slate-800">
+              <div className="mt-3 flex items-start gap-2 max-w-2xl rounded-xl bg-slate-50 dark:bg-slate-800 p-3 border border-slate-200 dark:border-surface-border-subtle-dark">
                 <Zap className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
                 <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
                   {briefingLoading ? (
@@ -473,7 +510,7 @@ export default function PortalPage() {
             {aiFlow.map((node) => (
               <div
                 key={node.key}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-4"
+                className="rounded-xl border border-slate-200 dark:border-surface-border-subtle-dark bg-slate-50 dark:bg-slate-800 p-4"
               >
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">

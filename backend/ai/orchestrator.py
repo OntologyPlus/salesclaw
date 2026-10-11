@@ -114,30 +114,113 @@ class Orchestrator:
             self._event_bus = event_bus
         return self._event_bus
 
-    async def _run_tool_loop(self, messages, agent, intent_name, tenant_id, db, user_id):
-        """执行 ToolLoop 并返回 (response, tools_used, llm_result) - 异步版本
+    async def _run_tool_loop(
+        self, messages, agent, intent_name, tenant_id, db, user_id,
+        should_cancel=None,
+        *,
+        session_id: Optional[str] = None,
+        agent_name: str = "",
+        skill_name: Optional[str] = None,
+        skill_meta: Optional[dict] = None,
+        is_workflow: bool = False,
+        trace_id: Optional[str] = None,
+        resume_run_id: Optional[str] = None,
+    ):
+        """执行 ToolLoop 并返回 (response, tools_used, llm_result, meta)
 
-        将 LLM 调用通过 async_chat 包装，避免阻塞事件循环
+        Phase B：动态预算 + checkpoint + OTEL span。
         """
         from ai.tool_loop import ToolLoop
         from ai.tools.registry import TOOL_REGISTRY
+        from ai.budget import resolve_budget
+        from ai.checkpoint_store import begin_run, save_checkpoint, finish_run, load_run
+        from ai.otel_spans import span
+
         available_tools = [t for t in agent.get("tools", []) if t in TOOL_REGISTRY]
-        if available_tools:
-            tool_loop = ToolLoop(
-                llm_client=self.llm,
-                tool_registry=TOOL_REGISTRY,
-                # N+5：max_rounds 限到 2，避免 LLM 反复 tool_call 引发多次串行 LLM 调用导致 timeout
-                max_rounds=2,
+        budget = resolve_budget(
+            intent=intent_name,
+            skill_meta=skill_meta,
+            is_workflow=is_workflow,
+        )
+        meta = {
+            "run_id": None,
+            "budget": budget.to_dict(),
+            "trace_id": trace_id,
+        }
+        if not available_tools:
+            llm_result = await self.llm.async_chat(
+                messages=messages, intent=intent_name, tenant_id=tenant_id,
+                trace_id=trace_id,
             )
-            ctx = {"db": db, "tenant_id": tenant_id, "user_id": user_id}
-            # B13-收尾：按 LLM_TOOL_CALL_MODE 分发到 run_native（原生 function calling）或 run（prompt 解析）
-            # - mode="native"：强制走原生
-            # - mode="auto" + provider="openai"：走原生
-            # - 其他（mode="prompt" 或 mock provider）：走 prompt 解析
-            import asyncio
-            mode = self.llm._tool_call_mode()
-            use_native = mode == "native" or (mode == "auto" and self.llm.provider == "openai")
-            runner = tool_loop.run_native if use_native else tool_loop.run
+            return llm_result.get("content", ""), [], llm_result, meta
+
+        resume_state = None
+        run_id = resume_run_id
+        if resume_run_id and db is not None:
+            loaded = load_run(db, resume_run_id, tenant_id=tenant_id)
+            if loaded and loaded.get("status") in ("running", "aborted", "failed"):
+                resume_state = {
+                    "messages": loaded.get("messages") or [],
+                    "tools_used": loaded.get("tools_used") or [],
+                    "round": loaded.get("cursor_round") or 0,
+                    "last_content": loaded.get("last_content") or "",
+                }
+                run_id = resume_run_id
+        if not run_id:
+            run_id = begin_run(
+                db,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                user_id=user_id,
+                intent=intent_name,
+                agent_name=agent_name,
+                skill_name=skill_name,
+                max_rounds=budget.max_rounds,
+                budget=budget.to_dict(),
+                trace_id=trace_id,
+            )
+        meta["run_id"] = run_id
+
+        tool_loop = ToolLoop(
+            llm_client=self.llm,
+            tool_registry=TOOL_REGISTRY,
+            max_rounds=budget.max_rounds,
+        )
+        ctx = {
+            "db": db,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "run_id": run_id,
+            "trace_id": trace_id,
+        }
+
+        def _on_round_end(round_num, snap):
+            save_checkpoint(
+                db, run_id,
+                cursor_round=round_num,
+                messages=snap.get("messages") or [],
+                tools_used=snap.get("tools_used") or [],
+                last_content=snap.get("last_content") or "",
+                status="running",
+            )
+
+        import asyncio
+        mode = self.llm._tool_call_mode()
+        use_native = mode == "native" or (mode == "auto" and self.llm.provider == "openai")
+        runner = tool_loop.run_native if use_native else tool_loop.run
+        budget_deadline = time.monotonic() + (budget.max_latency_ms / 1000.0)
+
+        with span(
+            "tool_loop.run",
+            trace_id=trace_id,
+            attributes={
+                "intent": intent_name,
+                "max_rounds": budget.max_rounds,
+                "run_id": run_id or "",
+                "native": use_native,
+            },
+        ):
             loop_result = await asyncio.to_thread(
                 runner,
                 messages=messages,
@@ -145,93 +228,139 @@ class Orchestrator:
                 ctx=ctx,
                 intent=intent_name,
                 tenant_id=tenant_id,
+                should_cancel=should_cancel,
+                on_round_end=_on_round_end,
+                resume_state=resume_state,
+                budget_deadline=budget_deadline,
             )
-            response = loop_result.get("response", "")
-            tools_used = loop_result.get("tools_used", [])
+        response = loop_result.get("response", "")
+        tools_used = loop_result.get("tools_used", [])
+        meta["truncated"] = bool(loop_result.get("truncated"))
+        meta["budget_exceeded"] = bool(loop_result.get("budget_exceeded"))
+        meta["aborted"] = bool(loop_result.get("aborted"))
 
-            # N+5：truncated 或 content 为空时，兜底用 LLM 基于工具结果总结成自然语言
-            if not response and tools_used:
-                try:
-                    summarize_msgs = messages + [{
-                        "role": "user",
-                        "content": (
-                            "基于以下工具返回的数据，用简洁自然的中文给用户回答（不要列 JSON）。\n"
-                            f"用户问题：{messages[-1].get('content', '')}\n"
-                            f"工具结果：{json.dumps(tools_used, ensure_ascii=False, default=str)[:1500]}"
-                        ),
-                    }]
-                    fb = await self.llm.async_chat(
-                        messages=summarize_msgs,
-                        intent=intent_name,
-                        tenant_id=tenant_id,
-                        use_cache=False,
-                    )
-                    response = fb.get("content", "") or response
-                except Exception as e:
-                    logger.debug("ToolLoop 兜底总结失败: %s", e, exc_info=True)
+        if not response and tools_used:
+            try:
+                summarize_msgs = messages + [{
+                    "role": "user",
+                    "content": (
+                        "基于以下工具返回的数据，用简洁自然的中文给用户回答（不要列 JSON）。\n"
+                        f"用户问题：{messages[-1].get('content', '')}\n"
+                        f"工具结果：{json.dumps(tools_used, ensure_ascii=False, default=str)[:1500]}"
+                    ),
+                }]
+                fb = await self.llm.async_chat(
+                    messages=summarize_msgs,
+                    intent=intent_name,
+                    tenant_id=tenant_id,
+                    use_cache=False,
+                    trace_id=trace_id,
+                )
+                response = fb.get("content", "") or response
+            except Exception as e:
+                logger.debug("ToolLoop 兜底总结失败: %s", e, exc_info=True)
 
-            llm_result = {
-                "content": response,
-                "reasoning": "",
-                "cache_hit": False,
-                "provider": "openai",
-                "degraded": False,
-            }
-            return response, tools_used, llm_result
-        else:
-            llm_result = await self.llm.async_chat(
-                messages=messages, intent=intent_name, tenant_id=tenant_id
-            )
-            return llm_result.get("content", ""), [], llm_result
+        status = "completed"
+        if meta.get("aborted"):
+            status = "aborted"
+        elif meta.get("budget_exceeded") or meta.get("truncated"):
+            status = "failed" if not response else "completed"
+        finish_run(db, run_id, status=status, last_content=response)
 
-    async def chat(self, message: str, user: Any = None,
-                   session_id: Optional[str] = None, db: Any = None,
-                   intent: Optional[str] = None,
-                   tenant_id: Optional[str] = None) -> dict:
-        """主入口 - 七步状态机
+        llm_result = {
+            "content": response,
+            "reasoning": "",
+            "cache_hit": False,
+            "provider": "openai",
+            "degraded": False,
+            "run_id": run_id,
+            "budget": budget.to_dict(),
+        }
+        return response, tools_used, llm_result, meta
 
-        B1：前置流程（guardrails/cache/intent/slots/safety）已抽取到 _pre_pipeline；
-        后置流程（持久化/指标/记忆/推理链/provenance）已抽取到 _post_pipeline。
+    async def _execute_agent_turn(
+        self,
+        *,
+        message: str,
+        user: Any,
+        session_id: str,
+        db: Any,
+        tenant_id: str,
+        user_id: Any,
+        intent_result: dict,
+        intent_name: str,
+        agent_name: str,
+        slots: dict,
+        should_cancel=None,
+        trace_id: Optional[str] = None,
+        resume_run_id: Optional[str] = None,
+    ) -> dict:
+        """Phase A/B：chat / stream_chat 共享的 Agent 执行核。
 
-        Args:
-            message: 用户消息
-            user: 当前用户对象
-            session_id: 会话 ID，未提供则生成新 ID
-            db: 数据库会话（可选，用于记忆/推理链/事件）
-            intent: 程序化意图覆盖（如 "diagnose"/"attribute"），跳过分类器
-
-        Returns:
-            包含 session_id、response、agent_used、intent、slots、
-            reasoning_chain、hallucination_check、cache_hit 等的字典
+        含：协作 → Skill/ToolLoop → Self-Reflection → 幻觉检测。
+        不含：pre_pipeline / post_pipeline / SSE 事件发射。
         """
-        start_time = time.monotonic()
-        # B11：生成 trace_id 用于全链路日志关联
-        trace_id = str(uuid.uuid4())[:8]
+        from ai.run_control import RunAborted, run_registry
+        from ai.otel_spans import span
 
-        # B1：前置流程（Step 1-4.5）
-        pre = await self._pre_pipeline(message, user, session_id, db, intent_override=intent, tenant_id_override=tenant_id)
-        if pre["early_return"]:
-            return pre["early_return"]
+        def _check():
+            if should_cancel and should_cancel():
+                raise RunAborted(session_id)
+            run_registry.check(session_id)
 
-        session_id = pre["session_id"]
-        tenant_id = pre["tenant_id"]
-        user_id = pre["user_id"]
-        intent_result = pre["intent_result"]
-        intent_name = pre["intent_name"]
-        agent_name = pre["agent_name"]
-        slots = pre["slots"]
-
-        # Step 5: Agent 执行 + Self-Reflection 循环
+        _check()
         agent = self._dispatch_agent(intent_result)
         context = self._build_context(user, intent_result, db, message)
 
-        # 初始化后续会用到的变量（协作分支可能跳过单 Agent 路径）
+        turn_span_cm = span(
+            "agent.turn",
+            trace_id=trace_id,
+            attributes={"intent": intent_name, "agent": agent_name, "session_id": session_id},
+        )
+        turn_span_cm.__enter__()
+        try:
+            return await self._execute_agent_turn_body(
+                message=message, user=user, session_id=session_id, db=db,
+                tenant_id=tenant_id, user_id=user_id,
+                intent_result=intent_result, intent_name=intent_name,
+                agent_name=agent_name, slots=slots,
+                should_cancel=should_cancel, trace_id=trace_id,
+                resume_run_id=resume_run_id,
+                agent=agent, context=context,
+                _check=_check,
+            )
+        finally:
+            try:
+                turn_span_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    async def _execute_agent_turn_body(
+        self,
+        *,
+        message, user, session_id, db, tenant_id, user_id,
+        intent_result, intent_name, agent_name, slots,
+        should_cancel, trace_id, resume_run_id,
+        agent, context, _check,
+    ) -> dict:
+        """_execute_agent_turn 的主体（便于 span finally 包裹）。"""
+        from ai.run_control import RunAborted
+
         rag_results = []
         skill_used = None
         memory_context = ""
+        draft_state = None
+        tools_used = []
+        run_meta = {}
+        response = ""
+        llm_result = {
+            "content": "",
+            "reasoning": "",
+            "cache_hit": False,
+            "provider": "mock",
+            "degraded": False,
+        }
 
-        # ─── 多 Agent 协作分支（复合意图时启用） ───
-        # 仅在 LLM 模式下启用协作（mock 模式下各 Agent 返回预设响应，协作无意义）
         collaboration_result = None
         collaboration_triggered = False
         try:
@@ -245,9 +374,8 @@ class Orchestrator:
                     message, intent_name
                 )
                 if detected is not None:
-                    # 触发协作
+                    _check()
                     collab = get_collaboration_orchestrator()
-                    # 注入 ToolLoop（协作场景下减少轮数）
                     try:
                         from ai.tool_loop import ToolLoop
                         from ai.tools.registry import TOOL_REGISTRY
@@ -277,7 +405,7 @@ class Orchestrator:
                             ctx=ctx, tenant_id=tenant_id,
                         )
                         response = collaboration_result.get("final_response", "")
-                    else:  # aggregate
+                    else:
                         collaboration_result = await collab.aggregate(
                             task=message, agent_names=collab_agents,
                             ctx=ctx, strategy=collab_strategy,
@@ -286,8 +414,6 @@ class Orchestrator:
                         response = collaboration_result.get("aggregated_response", "")
 
                     collaboration_triggered = True
-                    # 收集所有子 Agent 使用过的工具
-                    tools_used = []
                     for sub in (collaboration_result.get("sub_results", []) +
                                 collaboration_result.get("independent_results", []) +
                                 collaboration_result.get("stages", [])):
@@ -300,15 +426,14 @@ class Orchestrator:
                         "provider": "openai",
                         "degraded": False,
                     }
-                    # 更新 agent_name 为协作模式标记
                     agent_name = f"collab:{mode}"
+        except RunAborted:
+            raise
         except Exception:
-            # 协作失败 → 降级到单 Agent 路径
             collaboration_triggered = False
 
-        # ─── 单 Agent 路径（协作未触发时执行） ───
         if not collaboration_triggered:
-            # B10：Skill 路由 + RAG 检索 + 记忆上下文 并行加载（均为 I/O 密集）
+            _check()
             import asyncio as _asyncio
 
             async def _load_skill_ctx():
@@ -347,22 +472,17 @@ class Orchestrator:
                         logger.debug("记忆上下文构建失败: %s", e, exc_info=True)
                 return ""
 
-            skill_used, rag_results, memory_context = await _asyncio.gather(
+            _skill_tuple, rag_results, memory_context = await _asyncio.gather(
                 _load_skill_ctx(), _load_rag(), _load_memory()
             )
-            # _load_skill_ctx 返回 (skill_name, skill_context) 元组
-            _skill_tuple = skill_used
             skill_used = _skill_tuple[0]
             skill_context = _skill_tuple[1]
 
-            # 调用 LLM（含缓存、重试、降级）
             messages = self._build_llm_messages(
                 message, intent_name, memory_context, context,
                 skill_context=skill_context, rag_results=rag_results,
             )
 
-            # 工具调用循环（仅 LLM_PROVIDER=openai 时启用）
-            tools_used = []
             use_tool_loop = False
             try:
                 from ai.agents.registry import get_agent_mode
@@ -370,15 +490,14 @@ class Orchestrator:
             except Exception as e:
                 logger.debug("Agent 模式检测失败: %s", e, exc_info=True)
 
+            _check()
             if use_tool_loop:
-                # 优先使用 SkillExecutor（当匹配到 Skill 时）
                 if skill_used:
-                    # N+5：工作流型 Skill 走 WorkflowSkillExecutor（多轮门禁驱动）
                     is_workflow = False
+                    _skill_meta = None
                     try:
                         from ai.skills.loader import skill_loader
                         _skill_meta = skill_loader.load_skill(skill_used)
-                        # SKILL.md frontmatter 中 is_workflow 嵌套在 metadata: 下
                         _meta = (_skill_meta or {}).get("metadata", {}) or {}
                         _nested_meta = _meta.get("metadata", {}) or {}
                         is_workflow = bool(_meta.get("is_workflow") or _nested_meta.get("is_workflow"))
@@ -390,7 +509,6 @@ class Orchestrator:
                             from ai.skills.executor import get_workflow_skill_executor
                             workflow_executor = get_workflow_skill_executor()
                             ctx = {"db": db, "tenant_id": tenant_id, "user_id": user_id}
-                            # N+5 阻塞治理：用 async_execute 替代 asyncio.to_thread(execute)
                             skill_result = await workflow_executor.async_execute(
                                 skill_name=skill_used,
                                 message=message,
@@ -402,7 +520,6 @@ class Orchestrator:
                             from ai.skills.executor import get_skill_executor
                             skill_executor = get_skill_executor()
                             ctx = {"db": db, "tenant_id": tenant_id, "user_id": user_id}
-                            # execute 是同步方法，内部调 LLM；用 to_thread 丢到线程池
                             import asyncio
                             skill_result = await asyncio.to_thread(
                                 skill_executor.execute,
@@ -414,30 +531,43 @@ class Orchestrator:
                         if skill_result.get("success"):
                             response = skill_result.get("response", "")
                             tools_used = skill_result.get("tools_used", [])
+                            draft_state = skill_result.get("draft_state")
                             llm_result = {
                                 "content": response,
                                 "reasoning": "",
                                 "cache_hit": False,
-                                "provider": "openai",
+                                "provider": "workflow" if is_workflow else "openai",
                                 "degraded": False,
                             }
                         else:
-                            # Skill 执行失败 → 降级到 ToolLoop
                             raise Exception(skill_result.get("error", "Skill 执行失败"))
+                    except RunAborted:
+                        raise
                     except Exception:
-                        # SkillExecutor 失败 → 降级到普通 ToolLoop
-                        response, tools_used, llm_result = await self._run_tool_loop(
-                            messages, agent, intent_name, tenant_id, db, user_id
+                        response, tools_used, llm_result, run_meta = await self._run_tool_loop(
+                            messages, agent, intent_name, tenant_id, db, user_id,
+                            should_cancel=should_cancel,
+                            session_id=session_id, agent_name=agent_name,
+                            skill_name=skill_used, skill_meta=_skill_meta if skill_used else None,
+                            is_workflow=False, trace_id=trace_id,
+                            resume_run_id=resume_run_id,
                         )
                 else:
                     try:
-                        response, tools_used, llm_result = await self._run_tool_loop(
-                            messages, agent, intent_name, tenant_id, db, user_id
+                        response, tools_used, llm_result, run_meta = await self._run_tool_loop(
+                            messages, agent, intent_name, tenant_id, db, user_id,
+                            should_cancel=should_cancel,
+                            session_id=session_id, agent_name=agent_name,
+                            skill_name=None, skill_meta=None,
+                            is_workflow=False, trace_id=trace_id,
+                            resume_run_id=resume_run_id,
                         )
+                    except RunAborted:
+                        raise
                     except Exception:
-                        # 工具循环失败 → 降级到普通 LLM 调用
                         llm_result = await self.llm.async_chat(
-                            messages=messages, intent=intent_name, tenant_id=tenant_id
+                            messages=messages, intent=intent_name, tenant_id=tenant_id,
+                            trace_id=trace_id,
                         )
                         response = llm_result.get("content", "")
             else:
@@ -445,27 +575,34 @@ class Orchestrator:
                     messages=messages,
                     intent=intent_name,
                     tenant_id=tenant_id,
+                    trace_id=trace_id,
                 )
                 response = llm_result.get("content", "")
 
-        # Self-Reflection 循环
+        _check()
         reflection_count = 0
         reflection_triggered = False
         try:
             reflection = self._get_self_reflection()
             while reflection.should_retry(response, reflection_count):
+                _check()
                 reflection_count += 1
                 reflection_triggered = True
                 retry_prompt = reflection.build_retry_prompt(message, response, reflection_count)
                 retry_messages = self._build_llm_messages(retry_prompt, intent_name, memory_context, context)
-                retry_result = await self.llm.async_chat(messages=retry_messages, intent=intent_name, tenant_id=tenant_id, use_cache=False)
+                retry_result = await self.llm.async_chat(
+                    messages=retry_messages, intent=intent_name,
+                    tenant_id=tenant_id, use_cache=False, trace_id=trace_id,
+                )
                 response = retry_result.get("content", response)
                 if reflection_count >= 3:
                     break
+        except RunAborted:
+            raise
         except Exception as e:
             logger.debug("Self-Reflection 失败: %s", e, exc_info=True)
 
-        # Step 6: 幻觉检测
+        _check()
         hallucination_check = None
         try:
             detector = self._get_hallucination_detector()
@@ -482,30 +619,126 @@ class Orchestrator:
         except Exception as e:
             logger.warning("幻觉检测失败: %s", e, exc_info=True)
 
-        # B1：后置流程（Step 7：持久化 + 指标 + 记忆 + 推理链 + provenance）
+        return {
+            "response": response,
+            "tools_used": tools_used,
+            "llm_result": llm_result,
+            "agent_name": agent_name,
+            "agent": agent,
+            "skill_used": skill_used,
+            "rag_results": rag_results,
+            "memory_context": memory_context,
+            "context": context,
+            "reflection_count": reflection_count,
+            "reflection_triggered": reflection_triggered,
+            "hallucination_check": hallucination_check,
+            "collaboration_result": collaboration_result,
+            "draft_state": draft_state,
+            "run_id": (run_meta or {}).get("run_id") or (llm_result or {}).get("run_id"),
+            "budget": (run_meta or {}).get("budget") or (llm_result or {}).get("budget"),
+            "trace_id": trace_id,
+        }
+
+    async def chat(self, message: str, user: Any = None,
+                   session_id: Optional[str] = None, db: Any = None,
+                   intent: Optional[str] = None,
+                   tenant_id: Optional[str] = None,
+                   resume_run_id: Optional[str] = None) -> dict:
+        """主入口 - 七步状态机
+
+        Phase A：执行核与 stream_chat 共用 `_execute_agent_turn`。
+        Phase B：resume_run_id 续跑 ToolLoop checkpoint。
+        """
+        from ai.run_control import RunAborted, run_registry
+
+        start_time = time.monotonic()
+        trace_id = str(uuid.uuid4())[:8]
+
+        # 续跑：从 checkpoint 恢复 session / intent / trace
+        if resume_run_id and db is not None:
+            from ai.checkpoint_store import load_run
+            _loaded = load_run(db, resume_run_id, tenant_id=tenant_id)
+            if _loaded:
+                session_id = session_id or _loaded.get("session_id")
+                intent = intent or _loaded.get("intent")
+                trace_id = _loaded.get("trace_id") or trace_id
+
+        pre = await self._pre_pipeline(
+            message, user, session_id, db,
+            intent_override=intent, tenant_id_override=tenant_id,
+        )
+        if pre["early_return"]:
+            return pre["early_return"]
+
+        session_id = pre["session_id"]
+        tenant_id = pre["tenant_id"]
+        user_id = pre["user_id"]
+        intent_result = pre["intent_result"]
+        intent_name = pre["intent_name"]
+        agent_name = pre["agent_name"]
+        slots = pre["slots"]
+
+        run_registry.begin(session_id)
+        should_cancel = run_registry.cancel_callback(session_id)
+        try:
+            turn = await self._execute_agent_turn(
+                message=message, user=user, session_id=session_id, db=db,
+                tenant_id=tenant_id, user_id=user_id,
+                intent_result=intent_result, intent_name=intent_name,
+                agent_name=agent_name, slots=slots,
+                should_cancel=should_cancel,
+                trace_id=trace_id,
+                resume_run_id=resume_run_id,
+            )
+        except RunAborted:
+            return {
+                "session_id": session_id,
+                "response": "请求已取消。",
+                "agent_used": agent_name,
+                "actions_called": [],
+                "references": [],
+                "intent": intent_name,
+                "slots": slots,
+                "cache_hit": False,
+                "aborted": True,
+                "reasoning_chain": None,
+                "hallucination_check": None,
+                "trace_id": trace_id,
+            }
+        finally:
+            run_registry.end(session_id)
+
+        agent = turn["agent"]
+        tools_used = turn["tools_used"]
         result = self._post_pipeline(
             message=message,
-            response=response,
+            response=turn["response"],
             intent_name=intent_name,
-            agent_name=agent_name,
+            agent_name=turn["agent_name"],
             slots=slots,
             tools_used=tools_used,
-            rag_results=rag_results,
-            llm_result=llm_result,
-            skill_used=skill_used,
-            reflection_count=reflection_count,
-            reflection_triggered=reflection_triggered,
-            hallucination_check=hallucination_check,
+            rag_results=turn["rag_results"],
+            llm_result=turn["llm_result"],
+            skill_used=turn["skill_used"],
+            reflection_count=turn["reflection_count"],
+            reflection_triggered=turn["reflection_triggered"],
+            hallucination_check=turn["hallucination_check"],
             user=user,
             session_id=session_id,
             tenant_id=tenant_id,
             user_id=user_id,
             db=db,
             start_time=start_time,
-            collaboration_result=collaboration_result,
-            context=context,
+            collaboration_result=turn["collaboration_result"],
+            context=turn["context"],
             trace_id=trace_id,
         )
+        if turn.get("draft_state") is not None:
+            result["draft_state"] = turn["draft_state"]
+        if turn.get("run_id"):
+            result["run_id"] = turn["run_id"]
+        if turn.get("budget"):
+            result["budget"] = turn["budget"]
         result["actions_called"] = (
             [t["name"] for t in tools_used] if tools_used
             else (agent.get("tools", [])[:2] if isinstance(agent, dict) else [])
@@ -513,35 +746,39 @@ class Orchestrator:
         return result
 
     async def stream_chat(self, message: str, user: Any = None,
-                          session_id: Optional[str] = None, db: Any = None):
+                          session_id: Optional[str] = None, db: Any = None,
+                          intent: Optional[str] = None):
         """流式聊天生成器 - yield SSE 事件 dict
 
-        真流式：token-by-token 从 LLM 实时推送，含 Nemotron reasoning_content。
-        降级：mock 模式或 LLM 失败时，退回非流式调用后分段 yield。
-
-        Yields:
-            {"type": "thinking"|"intent"|"routing"|"reasoning"|"content"|"done"|"error", ...}
+        Phase A：与 chat() 共用 `_execute_agent_turn`（Skill/ToolLoop/协作），
+        再将结果以 thinking/skill/tools_used/content/done 事件推送。
+        intent：工作流页程序化意图覆盖。
         """
-        import asyncio
+        from ai.run_control import RunAborted, run_registry
 
         start_time = time.monotonic()
-        # B11：生成 trace_id 用于全链路日志关联
         trace_id = str(uuid.uuid4())[:8]
 
-        # B1：前置流程复用 _pre_pipeline（guardrails/cache/intent/slots/safety）
-        pre = await self._pre_pipeline(message, user, session_id, db)
+        # 若客户端已带 session_id，尽早注册以便 abort 竞态
+        if session_id:
+            run_registry.begin(session_id)
+
+        pre = await self._pre_pipeline(
+            message, user, session_id, db, intent_override=intent,
+        )
         if pre["early_return"]:
             early = pre["early_return"]
-            # Guardrail 拦截或安全护栏拦截 → yield error
             if early.get("safety_blocked") or pre["intent_name"] == "blocked":
                 yield {"type": "error", "message": early.get("response", "请求被拦截")}
-            # Cache 命中 → yield content + done
             elif early.get("cache_hit"):
                 yield {"type": "content", "chunk": early.get("response", "")}
-                yield {"type": "done", "session_id": pre["session_id"], "cache_hit": True,
-                       "skill_used": None, "reasoning_chain_id": None, "latency_ms": 0}
+                yield {
+                    "type": "done", "session_id": pre["session_id"], "cache_hit": True,
+                    "skill_used": None, "reasoning_chain_id": None, "latency_ms": 0,
+                }
             else:
                 yield {"type": "error", "message": early.get("response", "请求被拦截")}
+            run_registry.end(pre["session_id"])
             return
 
         session_id = pre["session_id"]
@@ -552,264 +789,125 @@ class Orchestrator:
         agent_name = pre["agent_name"]
         slots = pre["slots"]
 
+        run_registry.begin(session_id)
+        should_cancel = run_registry.cancel_callback(session_id)
+
         yield {"type": "thinking", "message": "AI 正在思考..."}
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.02)
         yield {"type": "intent", "intent": intent_name, "method": intent_result.get("method", "hybrid")}
-        await asyncio.sleep(0.03)
+        await asyncio.sleep(0.01)
         yield {"type": "routing", "agent": agent_name, "slots": slots}
-        await asyncio.sleep(0.03)
 
-        # B10：Skill 路由 + RAG 检索 + 记忆上下文 并行加载（均为 I/O 密集）
-        async def _stream_load_skill():
-            if not db:
-                return None, None
-            try:
-                from ai.skills.loader import skill_loader
-                sk = self._match_skill(intent_name)
-                if sk:
-                    ctx = await asyncio.to_thread(
-                        skill_loader.load_skill_context, sk, tenant_id, db
-                    )
-                    return sk, ctx
-            except Exception as e:
-                logger.debug("技能上下文加载失败: %s", e, exc_info=True)
-            return None, None
+        try:
+            if run_registry.is_aborted(session_id):
+                raise RunAborted(session_id)
 
-        async def _stream_load_rag():
-            if intent_name in ("knowledge", "rag") and db:
-                try:
-                    return await asyncio.to_thread(
-                        self.rag.retrieve, message, tenant_id, db, 5
-                    )
-                except Exception as e:
-                    logger.debug("RAG 检索失败: %s", e, exc_info=True)
-            return []
-
-        async def _stream_load_memory():
-            if db and user_id:
-                try:
-                    mem_service = self._get_memory_service()
-                    return await asyncio.to_thread(
-                        mem_service.build_context, user_id, tenant_id, message, db
-                    )
-                except Exception as e:
-                    logger.debug("记忆上下文构建失败: %s", e, exc_info=True)
-            return ""
-
-        _skill_tuple, rag_results, memory_context = await asyncio.gather(
-            _stream_load_skill(), _stream_load_rag(), _stream_load_memory()
-        )
-        skill_used = _skill_tuple[0]
-        skill_context = _skill_tuple[1]
-        if skill_used:
-            yield {"type": "skill", "name": skill_used, "status": "matched"}
-            await asyncio.sleep(0.02)
-
-        # 构建 LLM 消息
-        messages = self._build_llm_messages(
-            message, intent_name, memory_context,
-            self._build_context(user, intent_result, db, message),
-            skill_context=skill_context, rag_results=rag_results,
-        )
-
-        # N+5：工作流型 Skill 分支 — 走 WorkflowSkillExecutor，分段流式回放 + done 携带 draft_state
-        is_workflow_skill = False
-        if skill_used and db and user_id:
-            try:
-                from ai.skills.loader import skill_loader
-                _skill_meta = skill_loader.load_skill(skill_used)
-                # SKILL.md frontmatter 中 is_workflow 嵌套在 metadata: 下
-                _meta = (_skill_meta or {}).get("metadata", {}) or {}
-                _nested_meta = _meta.get("metadata", {}) or {}
-                is_workflow_skill = bool(_meta.get("is_workflow") or _nested_meta.get("is_workflow"))
-            except Exception:
-                pass
-
-        if is_workflow_skill:
-            from ai.skills.executor import get_workflow_skill_executor
-            workflow_executor = get_workflow_skill_executor()
-            ctx = {"db": db, "tenant_id": tenant_id, "user_id": user_id}
-            try:
-                # N+5 阻塞治理：用 async_execute 替代 asyncio.to_thread(execute)
-                skill_result = await workflow_executor.async_execute(
-                    skill_name=skill_used,
-                    message=message,
-                    ctx=ctx,
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                )
-            except Exception as e:
-                yield {"type": "error", "message": f"工作流 Skill 执行失败: {e}"}
-                return
-
-            response_text = skill_result.get("response", "") or ""
-            tools_used = skill_result.get("tools_used", []) or []
-            draft_state = skill_result.get("draft_state") or {}
-
-            # 工具调用事件（让前端展示原语执行轨迹）
-            if tools_used:
-                yield {"type": "tools_used", "items": [{"name": t} for t in tools_used]}
-
-            # 分段流式回放响应
-            for line in _split_response(response_text):
-                yield {"type": "content", "chunk": line}
-
-            # done 事件携带 draft_state（前端渲染步骤树 + 草稿回显）
-            latency_ms = int((time.monotonic() - start_time) * 1000)
-            self.metrics.record_request(
-                intent=intent_name, agent=agent_name, latency_ms=latency_ms,
-                success=True, cache_hit=False,
+            turn = await self._execute_agent_turn(
+                message=message, user=user, session_id=session_id, db=db,
+                tenant_id=tenant_id, user_id=user_id,
+                intent_result=intent_result, intent_name=intent_name,
+                agent_name=agent_name, slots=slots,
+                should_cancel=should_cancel,
+                trace_id=trace_id,
             )
+        except RunAborted:
+            yield {"type": "error", "message": "请求已取消", "aborted": True}
             yield {
+                "type": "done", "session_id": session_id, "aborted": True,
+                "intent": intent_name, "agent_used": agent_name, "latency_ms":
+                int((time.monotonic() - start_time) * 1000),
+                "trace_id": trace_id,
+            }
+            run_registry.end(session_id)
+            return
+        except Exception as e:
+            logger.error("stream_chat 执行失败: %s", e, exc_info=True)
+            yield {"type": "error", "message": str(e)}
+            run_registry.end(session_id)
+            return
+
+        try:
+            skill_used = turn["skill_used"]
+            tools_used = turn["tools_used"]
+            response_text = turn["response"] or ""
+            llm_result = turn["llm_result"] or {}
+            provider = llm_result.get("provider", "mock")
+            draft_state = turn.get("draft_state")
+            hallucination_check = turn["hallucination_check"]
+            agent_name = turn["agent_name"]
+
+            if skill_used:
+                yield {"type": "skill", "name": skill_used, "status": "matched"}
+
+            reasoning_text = llm_result.get("reasoning") or ""
+            if reasoning_text:
+                yield {"type": "reasoning", "chunk": reasoning_text}
+
+            if tools_used:
+                yield {
+                    "type": "tools_used",
+                    "items": [
+                        {"name": t.get("name", t) if isinstance(t, dict) else str(t)}
+                        for t in tools_used
+                    ],
+                }
+
+            for line in _split_response(response_text):
+                if run_registry.is_aborted(session_id):
+                    yield {"type": "error", "message": "请求已取消", "aborted": True}
+                    break
+                yield {"type": "content", "chunk": line}
+                await asyncio.sleep(0)
+
+            post_result = self._post_pipeline(
+                message=message, response=response_text, intent_name=intent_name,
+                agent_name=agent_name, slots=slots, tools_used=tools_used,
+                rag_results=turn["rag_results"],
+                llm_result={
+                    "cache_hit": llm_result.get("cache_hit", False),
+                    "provider": provider,
+                    "degraded": llm_result.get("degraded", False),
+                    "reasoning": reasoning_text,
+                },
+                skill_used=skill_used,
+                reflection_count=turn["reflection_count"],
+                reflection_triggered=turn["reflection_triggered"],
+                hallucination_check=hallucination_check,
+                user=user, session_id=session_id, tenant_id=tenant_id,
+                user_id=user_id, db=db, start_time=start_time,
+                collaboration_result=turn["collaboration_result"],
+                context=turn["context"],
+                trace_id=trace_id,
+            )
+
+            suggestions = self._generate_suggestions(intent_name)
+            if suggestions:
+                yield {"type": "suggestions", "items": suggestions}
+
+            _reasoning_chain = post_result.get("reasoning_chain") or {}
+            done_evt = {
                 "type": "done",
                 "session_id": session_id,
                 "intent": intent_name,
                 "agent_used": agent_name,
-                "cache_hit": False,
-                "latency_ms": latency_ms,
+                "cache_hit": llm_result.get("cache_hit", False),
+                "latency_ms": post_result["latency_ms"],
                 "skill_used": skill_used,
-                "reasoning_chain_id": None,
-                "hallucination_check": None,
-                "provider": "workflow",
-                "draft_state": draft_state,
+                "reasoning_chain_id": _reasoning_chain.get("chain_id"),
+                "hallucination_check": hallucination_check,
+                "provider": provider,
+                "provenance": post_result.get("provenance"),
+                "trace_id": post_result.get("trace_id"),
             }
-            return
-
-        # 调用 LLM（流式）
-        response_text = ""
-        reasoning_text = ""
-        provider = "mock"
-
-        try:
-            # 阻塞治理：LLM 初始化调用放入线程池，避免阻塞事件循环
-            llm_result = await asyncio.to_thread(
-                self.llm.chat,
-                messages=messages, intent=intent_name,
-                tenant_id=tenant_id, stream=True,
-            )
-
-            if llm_result.get("stream") and llm_result.get("iterator"):
-                # 真流式：逐 token 推送
-                # 阻塞治理：OpenAI SDK 迭代器是同步的，直接在 async generator 中迭代会
-                # 阻塞整个事件循环（单次典型 30-50s）。改为「生产者线程 + asyncio.Queue」
-                # 桥接：线程中消费同步迭代器，chunk 经 call_soon_threadsafe 推入队列，
-                # 事件循环侧 await queue.get() 逐个取出后 yield，事件循环全程不被阻塞。
-                provider = llm_result.get("provider", "openai")
-                iterator = llm_result["iterator"]
-                loop = asyncio.get_running_loop()
-                queue: asyncio.Queue = asyncio.Queue()
-                _SENTINEL = object()
-
-                def _produce():
-                    try:
-                        for chunk in iterator:
-                            loop.call_soon_threadsafe(queue.put_nowait, chunk)
-                    except Exception as exc:
-                        loop.call_soon_threadsafe(queue.put_nowait, exc)
-                    finally:
-                        loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
-
-                threading.Thread(target=_produce, daemon=True, name="llm-stream").start()
-
-                # N+5：Nemotron reasoning_content 输出非常长（数百 token），限制接收避免长 stream
-                MAX_REASONING_CHARS = 2000
-                # N+5：content + reasoning 总和上限，避免单次响应超过 8000 字符（典型 30-50s）
-                MAX_TOTAL_CHARS = 8000
-                total_chars = 0
-                while True:
-                    item = await queue.get()
-                    if item is _SENTINEL:
-                        break
-                    if isinstance(item, Exception):
-                        raise item
-                    chunk = item
-                    if not chunk.choices:
-                        continue
-                    delta = chunk.choices[0].delta
-                    # Nemotron reasoning_content（思考链）
-                    reasoning = getattr(delta, "reasoning_content", None)
-                    if reasoning and len(reasoning_text) < MAX_REASONING_CHARS:
-                        reasoning_text += reasoning
-                        yield {"type": "reasoning", "chunk": reasoning}
-                    # 正常内容
-                    content = getattr(delta, "content", None)
-                    if content:
-                        response_text += content
-                        yield {"type": "content", "chunk": content}
-                    # 总字符上限保护
-                    total_chars = len(response_text) + len(reasoning_text)
-                    if total_chars >= MAX_TOTAL_CHARS:
-                        break
-            else:
-                # 降级：非流式结果，分段 yield
-                response_text = llm_result.get("content", "")
-                provider = llm_result.get("provider", "mock")
-                reasoning_text = llm_result.get("reasoning", "")
-                if reasoning_text:
-                    yield {"type": "reasoning", "chunk": reasoning_text}
-                for line in _split_response(response_text):
-                    yield {"type": "content", "chunk": line}
-        except Exception as e:
-            yield {"type": "error", "message": str(e)}
-            return
-
-        # Step 6: 幻觉检测（流结束后）
-        hallucination_check = None
-        try:
-            detector = self._get_hallucination_detector()
-            context = self._build_context(user, intent_result, db, message)
-            ontology_data = self._build_ontology_data(context, slots)
-            hallucination_check = detector.detect(response_text, context, ontology_data)
-            if hallucination_check["recommendation"] == "refuse":
-                response_text = "抱歉，我无法确认相关信息的准确性，建议您直接查询系统数据。"
-                yield {"type": "content", "chunk": "\n\n⚠️ " + response_text}
-                self._safe_publish("hallucination_rejected", {
-                    "score": hallucination_check["score"], "user_id": user_id,
-                }, tenant_id, db)
-            elif hallucination_check["recommendation"] == "review":
-                yield {"type": "content", "chunk": "\n\n⚠️ 以上信息仅供参考，建议人工复核。"}
-        except Exception as e:
-            logger.warning("幻觉检测失败: %s", e, exc_info=True)
-
-        # B1：后置流程复用 _post_pipeline（cache 写入/指标/记忆/推理链/provenance）
-        _llm_result_for_post = {
-            "cache_hit": llm_result.get("cache_hit", False),
-            "provider": provider,
-            "degraded": False,
-            "reasoning": reasoning_text,
-        }
-        post_result = self._post_pipeline(
-            message=message, response=response_text, intent_name=intent_name,
-            agent_name=agent_name, slots=slots, tools_used=[], rag_results=rag_results,
-            llm_result=_llm_result_for_post, skill_used=skill_used,
-            reflection_count=0, reflection_triggered=False,
-            hallucination_check=hallucination_check, user=user, session_id=session_id,
-            tenant_id=tenant_id, user_id=user_id, db=db, start_time=start_time,
-            context=self._build_context(user, intent_result, db, message),
-            trace_id=trace_id,
-        )
-
-        # suggestions 事件
-        suggestions = self._generate_suggestions(intent_name)
-        if suggestions:
-            yield {"type": "suggestions", "items": suggestions}
-
-        # done 事件（用 _post_pipeline 返回值填充 reasoning_chain/provenance/trace_id）
-        _reasoning_chain = post_result.get("reasoning_chain") or {}
-        yield {
-            "type": "done",
-            "session_id": session_id,
-            "intent": intent_name,
-            "agent_used": agent_name,
-            "cache_hit": llm_result.get("cache_hit", False),
-            "latency_ms": post_result["latency_ms"],
-            "skill_used": skill_used,
-            "reasoning_chain_id": _reasoning_chain.get("chain_id"),
-            "hallucination_check": hallucination_check,
-            "provider": provider,
-            "provenance": post_result.get("provenance"),
-            "trace_id": post_result.get("trace_id"),
-        }
+            if draft_state is not None:
+                done_evt["draft_state"] = draft_state
+            if turn.get("run_id"):
+                done_evt["run_id"] = turn["run_id"]
+            if turn.get("budget"):
+                done_evt["budget"] = turn["budget"]
+            yield done_evt
+        finally:
+            run_registry.end(session_id)
 
     # ──────────────────────────────────────────────
     # B1：抽取公共 Pipeline（chat 与 stream_chat 共享）
@@ -881,11 +979,19 @@ class Orchestrator:
 
         # Step 3: 意图分类（支持程序化 intent 覆盖）
         if intent_override:
-            # 程序化调用（如 AI 诊断/归因）：跳过自然语言分类器
+            # 程序化调用：跳过自然语言分类器，按 INTENT_KEYWORDS / 特判表解析 domain
             intent_name = intent_override
-            # N+AI原生闭环：diagnose/attribute 及四类新推理意图均路由到 decision 域
-            _DECISION_INTENTS = ("diagnose", "attribute", "derive_paradigm", "evaluate", "suggest", "insight")
-            domain = "decision" if intent_override in _DECISION_INTENTS else "global"
+            domain = "global"
+            for _kws, iname, idomain in INTENT_KEYWORDS:
+                if iname == intent_override:
+                    domain = idomain
+                    break
+            _DECISION_INTENTS = (
+                "diagnose", "attribute", "derive_paradigm",
+                "evaluate", "suggest", "insight",
+            )
+            if intent_override in _DECISION_INTENTS:
+                domain = "decision"
             intent_result = {
                 "intent": intent_name,
                 "domain": domain,

@@ -18,6 +18,7 @@ import Skeleton from '@/components/ui/Skeleton'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { trainingAPI } from '@/services/training'
+import type { PageRes } from '@/types/page'
 
 // 课程行
 interface CourseItem extends Record<string, unknown> {
@@ -45,12 +46,6 @@ interface CourseProgress {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 课程类型映射
 const courseTypeMap: Record<string, string> = {

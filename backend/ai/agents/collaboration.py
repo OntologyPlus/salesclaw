@@ -99,8 +99,7 @@ class CollaborationOrchestrator:
 
         Args:
             use_tool_loop: 是否使用 ToolLoop。
-                - orchestrate（串行）: True，db session 安全
-                - delegate/aggregate（并行）: False，避免多线程共享 db session 竞态
+                Phase A：delegate/aggregate 通过独立 DB session 后也可为 True。
 
         Returns:
             {agent, response, tools_used}
@@ -112,7 +111,6 @@ class CollaborationOrchestrator:
             {"role": "user", "content": task},
         ]
 
-        # 串行模式可使用 ToolLoop（db session 单线程使用，安全）
         if use_tool_loop and self._tool_loop is not None:
             from ai.tools.registry import TOOL_REGISTRY
             from ai.agents.registry import get_agent
@@ -133,7 +131,6 @@ class CollaborationOrchestrator:
                     "tools_used": loop_result.get("tools_used", []),
                 }
 
-        # 并行模式或无 ToolLoop → 直接 async LLM 调用（不涉及 db，并行安全）
         result = await self._llm_client.async_chat(
             messages=messages,
             intent=intent,
@@ -144,6 +141,27 @@ class CollaborationOrchestrator:
             "response": result.get("content", ""),
             "tools_used": [],
         }
+
+    async def _call_agent_with_isolated_db(
+        self, agent_name: str, task: str, ctx: dict,
+        intent: str = "", tenant_id: str = "default",
+    ) -> dict:
+        """Phase A：并行协作时为每个子任务创建独立 DB session，启用 ToolLoop。"""
+        from database import BusinessSessionLocal
+
+        local_db = BusinessSessionLocal()
+        try:
+            local_ctx = dict(ctx or {})
+            local_ctx["db"] = local_db
+            return await self._call_agent_async(
+                agent_name, task, local_ctx,
+                intent=intent, tenant_id=tenant_id, use_tool_loop=True,
+            )
+        finally:
+            try:
+                local_db.close()
+            except Exception as e:
+                logger.debug("协作隔离 session 关闭失败: %s", e)
 
     # ──────────────────────────────────────────────
     # 协作模式
@@ -158,8 +176,7 @@ class CollaborationOrchestrator:
     ) -> dict:
         """委托模式：Supervisor 拆解任务 → 并行分派 → 聚合
 
-        B2 真并行化：用 asyncio.gather 并行调用各子 Agent。
-        use_tool_loop=False 避免多协程共享 db session 竞态。
+        Phase A：并行子任务各自独立 DB session，可启用 ToolLoop 接地。
 
         Args:
             task: 复杂任务描述
@@ -187,14 +204,14 @@ class CollaborationOrchestrator:
         decompose_result = await self._llm_client.async_chat(messages=messages, tenant_id=tenant_id)
         subtasks = self._parse_decomposition(decompose_result.get("content", ""), sub_agents)
 
-        # 2. 并行调用各 Agent（asyncio.gather 真并行，use_tool_loop=False 避免 db session 竞态）
+        # 2. 并行调用各 Agent：每子任务独立 DB session，可安全启用 ToolLoop
         async def _run_one(item):
             agent_name = item.get("name", "")
             subtask = item.get("subtask", task)
             if agent_name not in sub_agents:
                 agent_name = sub_agents[0] if sub_agents else "Supervisor"
-            return await self._call_agent_async(
-                agent_name, subtask, ctx, tenant_id=tenant_id, use_tool_loop=False,
+            return await self._call_agent_with_isolated_db(
+                agent_name, subtask, ctx, tenant_id=tenant_id,
             )
 
         sub_results = await asyncio.gather(*[_run_one(item) for item in subtasks])
@@ -274,8 +291,7 @@ class CollaborationOrchestrator:
     ) -> dict:
         """聚合模式：多个 Agent 独立处理同一任务 → 合并
 
-        B2 真并行化：用 asyncio.gather 并行调用各 Agent。
-        use_tool_loop=False 避免多协程共享 db session 竞态。
+        Phase A：并行 Agent 各自独立 DB session + ToolLoop。
 
         Args:
             task: 任务描述
@@ -289,10 +305,10 @@ class CollaborationOrchestrator:
         """
         self._ensure_llm()
 
-        # 1. 各 Agent 独立处理（asyncio.gather 真并行，use_tool_loop=False 避免 db session 竞态）
+        # 1. 各 Agent 独立处理：每 Agent 独立 DB session + ToolLoop
         independent_results = await asyncio.gather(*[
-            self._call_agent_async(
-                name, task, ctx, tenant_id=tenant_id, use_tool_loop=False,
+            self._call_agent_with_isolated_db(
+                name, task, ctx, tenant_id=tenant_id,
             )
             for name in agent_names
         ])

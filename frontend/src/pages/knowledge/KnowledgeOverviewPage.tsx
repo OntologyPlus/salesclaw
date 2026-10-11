@@ -1,14 +1,17 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { BookOpen, FileText, Eye, HelpCircle, Search, TrendingUp } from 'lucide-react'
 import PageHeader from '@/components/data/PageHeader'
 import StatCard from '@/components/data/StatCard'
 import Empty from '@/components/ui/Empty'
 import SectionCard from '@/components/layout/SectionCard'
 import ListSection from '@/components/layout/ListSection'
+import DomainNavGrid from '@/components/layout/DomainNavGrid'
+import ErrorState from '@/components/ui/ErrorState'
 import AIInsightBlock from '@/components/ai/AIInsightBlock'
 import AIInsightPanel from '@/components/ai/AIInsightPanel'
 import useFetch from '@/hooks/useFetch'
+import { getNavItemsByPrefixes } from '@/config/navConfig'
 import { knowledgeAPI } from '@/services/knowledge'
 
 interface CategoryItem {
@@ -60,7 +63,7 @@ function CategoryBadge({ category }: { category: string }) {
 export default function KnowledgeOverviewPage() {
   const navigate = useNavigate()
   const [searchKeyword, setSearchKeyword] = useState('')
-  const { data, loading } = useFetch<OverviewData>(() => knowledgeAPI.getOverview(), [])
+  const { data, loading, error, refetch } = useFetch<OverviewData>(() => knowledgeAPI.getOverview(), [])
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault()
@@ -68,6 +71,7 @@ export default function KnowledgeOverviewPage() {
   }
 
   if (loading) return <div className="p-6 text-slate-500">加载中...</div>
+  if (error) return <ErrorState message={error.message} onRetry={refetch} />
   if (!data) return <Empty description="暂无数据" />
 
   const categories: CategoryItem[] = data.categories || []
@@ -111,28 +115,10 @@ export default function KnowledgeOverviewPage() {
         <StatCard title="总浏览量" value={data.total_views ?? 0} icon={<Eye className="w-5 h-5" />} color="cyan" />
       </div>
 
-      {/* 快捷入口 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <Link to="/knowledge/documents" className="p-5 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark hover:shadow-md transition-shadow group">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400">
-              <FileText className="w-5 h-5" />
-            </div>
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-brand-600">知识文档</h3>
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">产品、临床、合规与销售知识库</p>
-        </Link>
-
-        <Link to="/knowledge/faqs" className="p-5 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark hover:shadow-md transition-shadow group">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-900/20 dark:text-violet-400">
-              <HelpCircle className="w-5 h-5" />
-            </div>
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-brand-600">常见问题</h3>
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">高频问题与标准答案</p>
-        </Link>
-      </div>
+      <DomainNavGrid
+        className="mb-6"
+        items={getNavItemsByPrefixes(['/knowledge'], { excludeExact: ['/knowledge'] })}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 分类分布 */}

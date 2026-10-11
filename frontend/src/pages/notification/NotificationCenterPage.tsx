@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
 import {
   Bell, Plus, Power, Eye, Download, AlertCircle, RefreshCw, Clock, Send,
 } from 'lucide-react'
@@ -14,10 +13,12 @@ import Select from '@/components/ui/Select'
 import FormField from '@/components/forms/FormField'
 import Tabs from '@/components/ui/Tabs'
 import Empty from '@/components/ui/Empty'
+import VirtualList from '@/components/layout/VirtualList'
 import api from '@/services/api'
 import { notificationAPI } from '@/services/notification'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
+import type { PageRes } from '@/types/page'
 
 // 规则
 interface NotificationRule extends Record<string, unknown> {
@@ -63,12 +64,6 @@ interface BatchDetail extends NotificationBatch {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 const tabList = [
   { key: 'rules', label: '规则记录' },
@@ -484,40 +479,35 @@ export default function NotificationCenterPage() {
                 ) : null}
               </div>
 
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 dark:bg-slate-800/80">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">学员ID</th>
-                      <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">状态</th>
-                      <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">失败原因</th>
-                      <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">时间</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {(detail.recipients ?? []).length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-3 py-6 text-center text-slate-400">暂无明细</td>
-                      </tr>
-                    ) : (
-                      (detail.recipients ?? []).slice(0, 50).map((r) => {
-                        const s = recipientStatusMap[r.status ?? 'pending'] ?? recipientStatusMap.pending
-                        return (
-                          <motion.tr key={r.id}>
-                            <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{r.learner_id ?? '-'}</td>
-                            <td className="px-3 py-2"><Badge variant={s.variant}>{s.label}</Badge></td>
-                            <td className="px-3 py-2 text-slate-500 truncate max-w-[200px]">{r.reason || '-'}</td>
-                            <td className="px-3 py-2 text-slate-400">{r.sent_at?.slice(0, 16) ?? '-'}</td>
-                          </motion.tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
+              <div className="rounded-xl border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
+                <div className="grid grid-cols-4 gap-2 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-surface-raised-dark">
+                  <span>学员ID</span>
+                  <span>状态</span>
+                  <span>失败原因</span>
+                  <span>时间</span>
+                </div>
+                {(detail.recipients ?? []).length === 0 ? (
+                  <div className="px-3 py-6 text-center text-sm text-slate-400">暂无明细</div>
+                ) : (
+                  <VirtualList
+                    items={detail.recipients ?? []}
+                    itemHeight={44}
+                    height={Math.min(352, Math.max(132, (detail.recipients?.length ?? 0) * 44))}
+                    getKey={(r) => r.id}
+                    renderItem={(r) => {
+                      const s = recipientStatusMap[r.status ?? 'pending'] ?? recipientStatusMap.pending
+                      return (
+                        <div className="grid grid-cols-4 gap-2 px-3 py-2 text-sm border-t border-slate-100 dark:border-surface-border-subtle-dark items-center">
+                          <span className="text-slate-700 dark:text-slate-200">{r.learner_id ?? '-'}</span>
+                          <span><Badge variant={s.variant}>{s.label}</Badge></span>
+                          <span className="text-slate-500 truncate">{r.reason || '-'}</span>
+                          <span className="text-slate-400">{r.sent_at?.slice(0, 16) ?? '-'}</span>
+                        </div>
+                      )
+                    }}
+                  />
+                )}
               </div>
-              {(detail.recipients?.length ?? 0) > 50 && (
-                <p className="text-xs text-slate-400 text-center">仅展示前 50 条，可导出失败名单查看完整列表</p>
-              )}
             </>
           )}
         </div>

@@ -4,7 +4,9 @@ import PageHeader from '@/components/data/PageHeader'
 import Empty from '@/components/ui/Empty'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
+import Select from '@/components/ui/Select'
 import { useFetch } from '@/hooks/useFetch'
 import { useToast } from '@/hooks/useToast'
 import { complianceAPI, type RegulatorySubmission, type PageRes } from '@/services/compliance'
@@ -100,14 +102,14 @@ export default function ComplianceSubmissionPage() {
         }
       />
 
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-surface-border-subtle-dark">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">报送台账</h2>
           <span className="text-xs text-slate-500 dark:text-slate-400">共 {data?.total ?? items.length} 条</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900/80">
+            <thead className="bg-slate-50 dark:bg-surface-card-dark/80">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">周期</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">类型</th>
@@ -167,50 +169,41 @@ export default function ComplianceSubmissionPage() {
         }
       >
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">周期类型</label>
-            <select
-              className="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm"
-              value={form.period_type}
-              onChange={(e) => setForm({ ...form, period_type: e.target.value })}
-            >
-              <option value="year">年（year）</option>
-              <option value="quarter">季（quarter）</option>
-              <option value="month">月（month）</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">周期值</label>
-            <input
-              className="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm"
-              value={form.period_value}
-              onChange={(e) => setForm({ ...form, period_value: e.target.value })}
-              placeholder="如 2026 / 2026-Q2 / 2026-08"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">报送类型</label>
-            <select
-              className="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm"
-              value={form.submission_type}
-              onChange={(e) => setForm({ ...form, submission_type: e.target.value })}
-            >
-              <option value="violation_summary">违规汇总</option>
-              <option value="activity_summary">活动汇总</option>
-              <option value="annual">年度</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">导出格式</label>
-            <select
-              className="w-full h-10 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm"
-              value={form.format}
-              onChange={(e) => setForm({ ...form, format: e.target.value })}
-            >
-              <option value="json">JSON</option>
-              <option value="csv">CSV</option>
-            </select>
-          </div>
+          <Select
+            label="周期类型"
+            value={form.period_type}
+            onChange={(e) => setForm({ ...form, period_type: e.target.value })}
+            options={[
+              { label: '年（year）', value: 'year' },
+              { label: '季（quarter）', value: 'quarter' },
+              { label: '月（month）', value: 'month' },
+            ]}
+          />
+          <Input
+            label="周期值"
+            value={form.period_value}
+            onChange={(e) => setForm({ ...form, period_value: e.target.value })}
+            placeholder="如 2026 / 2026-Q2 / 2026-08"
+          />
+          <Select
+            label="报送类型"
+            value={form.submission_type}
+            onChange={(e) => setForm({ ...form, submission_type: e.target.value })}
+            options={[
+              { label: '违规汇总', value: 'violation_summary' },
+              { label: '活动汇总', value: 'activity_summary' },
+              { label: '年度', value: 'annual' },
+            ]}
+          />
+          <Select
+            label="导出格式"
+            value={form.format}
+            onChange={(e) => setForm({ ...form, format: e.target.value })}
+            options={[
+              { label: 'JSON', value: 'json' },
+              { label: 'CSV', value: 'csv' },
+            ]}
+          />
         </div>
       </Modal>
     </div>

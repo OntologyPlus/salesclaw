@@ -71,7 +71,7 @@ export function useAIRowAnnotation({
       rows.forEach((row, i) => {
         if (lines[i]) {
           // 清理 AI 返回的序号前缀
-          const cleaned = lines[i].replace(/^\d+[\.\)]\s*/, '').trim()
+          const cleaned = lines[i].replace(/^\d+[.)]\s*/, '').trim()
           if (cleaned && cleaned !== '正常') {
             result[String(row.id)] = cleaned
           }

@@ -5,6 +5,8 @@ import ApprovalListPage from './ApprovalListPage'
 import AnnouncementListPage from './AnnouncementListPage'
 import MeetingOrganizerChatPage from './MeetingOrganizerChatPage'
 import ReportBuilderChatPage from './ReportBuilderChatPage'
+import AcademicActivityChatPage from './AcademicActivityChatPage'
+import AcademicBoardPage from './AcademicBoardPage'
 
 // 协同办公模块路由
 function CollabRoutes() {
@@ -16,6 +18,8 @@ function CollabRoutes() {
       <Route path="announcements" element={<AnnouncementListPage />} />
       <Route path="meeting-organize" element={<MeetingOrganizerChatPage />} />
       <Route path="report-build" element={<ReportBuilderChatPage />} />
+      <Route path="academic-chat" element={<AcademicActivityChatPage />} />
+      <Route path="academic-board" element={<AcademicBoardPage />} />
     </Routes>
   )
 }

@@ -191,14 +191,15 @@ class SkillExecutor:
             except Exception as e:
                 return self._error_result(skill_name, f"LLM 调用失败: {e}")
 
-        # 调用 ToolLoop 执行
+        # 调用 ToolLoop 执行（Phase B：按 skill/intent 动态预算）
         try:
             from ai.tool_loop import ToolLoop
+            from ai.budget import resolve_budget
+            _budget = resolve_budget(intent=skill_name or "", skill_meta=skill)
             tool_loop = ToolLoop(
                 llm_client=self.llm,
                 tool_registry=self.tools,
-                # N+5：max_rounds 限到 2，避免 LLM 反复 tool_call 引发多次串行 LLM 调用导致 timeout
-                max_rounds=2,
+                max_rounds=_budget.max_rounds,
             )
 
             messages = [
@@ -377,7 +378,7 @@ class WorkflowSkillExecutor(SkillExecutor):
     - 返回结构包含 draft_state 和 next_step_hint
     """
 
-    MAX_WORKFLOW_ROUNDS = 8
+    MAX_WORKFLOW_ROUNDS = 8  # 默认；实际以 resolve_budget / SKILL.md 为准
 
     def execute(
         self,
@@ -443,12 +444,16 @@ class WorkflowSkillExecutor(SkillExecutor):
         if not available_tools:
             return self._error_result(skill_name, "工作流 Skill 无可用工具")
 
-        # 5. 调用 ToolLoop（max_rounds=8 容纳多原语）
+        # 5. 调用 ToolLoop（Phase B：工作流预算）
         from ai.tool_loop import ToolLoop
+        from ai.budget import resolve_budget
+        _wf_budget = resolve_budget(
+            intent=skill_name or "", skill_meta=skill, is_workflow=True,
+        )
         tool_loop = ToolLoop(
             llm_client=self.llm,
             tool_registry=self.tools,
-            max_rounds=self.MAX_WORKFLOW_ROUNDS,
+            max_rounds=_wf_budget.max_rounds or self.MAX_WORKFLOW_ROUNDS,
         )
 
         # 注入 session_id 到 ctx（工具函数依赖）
@@ -488,11 +493,7 @@ class WorkflowSkillExecutor(SkillExecutor):
             "raw_output": response,
             "truncated": loop_result.get("truncated", False),
             "error": None,
-            "draft_state": {
-                "current_step": draft.current_step,
-                "gates_passed": list(draft.gates_passed),
-                "scenario_id": draft.scenario_id,
-            },
+            "draft_state": self._serialize_draft_state(draft),
             "next_step_hint": draft.current_step if draft.current_step != "done" else "done",
         }
 
@@ -556,12 +557,16 @@ class WorkflowSkillExecutor(SkillExecutor):
         if not available_tools:
             return self._error_result(skill_name, "工作流 Skill 无可用工具")
 
-        # 5. 异步调用 ToolLoop
+        # 5. 异步调用 ToolLoop（Phase B：工作流预算）
         from ai.tool_loop import ToolLoop
+        from ai.budget import resolve_budget
+        _wf_budget = resolve_budget(
+            intent=skill_name or "", skill_meta=skill, is_workflow=True,
+        )
         tool_loop = ToolLoop(
             llm_client=self.llm,
             tool_registry=self.tools,
-            max_rounds=self.MAX_WORKFLOW_ROUNDS,
+            max_rounds=_wf_budget.max_rounds or self.MAX_WORKFLOW_ROUNDS,
         )
 
         workflow_ctx = {**ctx, "session_id": session_id}
@@ -600,12 +605,23 @@ class WorkflowSkillExecutor(SkillExecutor):
             "raw_output": response,
             "truncated": loop_result.get("truncated", False),
             "error": None,
-            "draft_state": {
-                "current_step": draft.current_step,
-                "gates_passed": list(draft.gates_passed),
-                "scenario_id": draft.scenario_id,
-            },
+            "draft_state": self._serialize_draft_state(draft),
             "next_step_hint": draft.current_step if draft.current_step != "done" else "done",
+        }
+
+    @staticmethod
+    def _serialize_draft_state(draft) -> dict:
+        """前端 WorkflowChatLayout 需要完整草稿字段（门禁树 + 右侧回显）。"""
+        return {
+            "current_step": draft.current_step,
+            "gates_passed": list(draft.gates_passed or []),
+            "scenario_id": draft.scenario_id,
+            "submit_confirmed": bool(getattr(draft, "submit_confirmed", False)),
+            "config": dict(draft.config or {}),
+            "collection": dict(draft.collection or {}),
+            "title_bg": dict(draft.title_bg or {}),
+            "knowledge": dict(draft.knowledge or {}),
+            "context_payload": dict(draft.context_payload or {}),
         }
 
     def _build_workflow_system_prompt(

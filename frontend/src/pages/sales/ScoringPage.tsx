@@ -10,6 +10,7 @@ import Badge from '@/components/ui/Badge'
 import Skeleton from '@/components/ui/Skeleton'
 import { useFetch } from '@/hooks/useFetch'
 import { salesAPI } from '@/services/sales'
+import type { PageRes } from '@/types/page'
 
 // 积分汇总（后端字段：behavior_points / instruction_points / total_points）
 interface ScoringSummary {
@@ -41,12 +42,6 @@ interface ScoreRecord extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 export default function ScoringPage() {
   const [tab, setTab] = useState('behavior')

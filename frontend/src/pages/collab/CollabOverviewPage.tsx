@@ -1,12 +1,15 @@
 import { Link } from 'react-router-dom'
-import { Users, CheckSquare, Clock, FileCheck, Megaphone, AlertTriangle, Pin } from 'lucide-react'
+import { Users, CheckSquare, Clock, FileCheck, Megaphone, AlertTriangle, Pin, MessageSquarePlus, CalendarDays } from 'lucide-react'
 import PageHeader from '@/components/data/PageHeader'
 import StatCard from '@/components/data/StatCard'
 import SectionCard from '@/components/layout/SectionCard'
 import ListSection from '@/components/layout/ListSection'
+import DomainNavGrid from '@/components/layout/DomainNavGrid'
+import ErrorState from '@/components/ui/ErrorState'
 import AIInsightBlock from '@/components/ai/AIInsightBlock'
 import AIInsightPanel from '@/components/ai/AIInsightPanel'
 import useFetch from '@/hooks/useFetch'
+import { getNavItemsByPrefixes } from '@/config/navConfig'
 import { collabAPI } from '@/services/collab'
 
 interface Announcement {
@@ -24,9 +27,10 @@ const ANN_TYPE_CONFIG: Record<string, { label: string; cls: string }> = {
 }
 
 export default function CollabOverviewPage() {
-  const { data, loading } = useFetch(() => collabAPI.getOverview(), [])
+  const { data, loading, error, refetch } = useFetch(() => collabAPI.getOverview(), [])
 
   if (loading) return <div className="p-6 text-slate-500">加载中...</div>
+  if (error) return <ErrorState message={error.message} onRetry={refetch} />
   if (!data) return <div className="p-6 text-slate-500">暂无数据</div>
 
   const recentAnnouncements: Announcement[] = data.recent_announcements || []
@@ -42,16 +46,39 @@ export default function CollabOverviewPage() {
       />
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
         <StatCard title="总任务" value={data.total_tasks ?? 0} icon={<CheckSquare className="w-5 h-5" />} color="brand" />
         <StatCard title="待处理" value={data.pending_tasks ?? 0} icon={<Clock className="w-5 h-5" />} color="blue" />
         <StatCard title="已逾期" value={overdue} icon={<AlertTriangle className="w-5 h-5" />} color={overdue > 0 ? 'rose' : 'amber'} />
         <StatCard title="待审批" value={data.pending_approvals ?? 0} icon={<FileCheck className="w-5 h-5" />} color="violet" />
         <StatCard title="公告数" value={data.announcements_count ?? 0} icon={<Megaphone className="w-5 h-5" />} color="cyan" />
+        <StatCard title="学术活动" value={data.academic_activity_count ?? 0} icon={<CalendarDays className="w-5 h-5" />} color="emerald" />
+        <StatCard title="学术进行中" value={data.academic_ongoing ?? 0} icon={<MessageSquarePlus className="w-5 h-5" />} color="amber" />
+        <StatCard title="学术已归档" value={data.academic_archived ?? 0} icon={<FileCheck className="w-5 h-5" />} color="violet" />
       </div>
 
       {/* 快捷入口 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <Link to="/collab/academic-chat" className="p-5 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark hover:shadow-md transition-shadow group">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400">
+              <MessageSquarePlus className="w-5 h-5" />
+            </div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-brand-600">对话式学术活动</h3>
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">门禁驱动立项到归档</p>
+        </Link>
+
+        <Link to="/collab/academic-board" className="p-5 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark hover:shadow-md transition-shadow group">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
+              <CalendarDays className="w-5 h-5" />
+            </div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-brand-600">学术三流看板</h3>
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">协议 · 签到 · 费用进度</p>
+        </Link>
+
         <Link to="/collab/tasks" className="p-5 rounded-2xl bg-white dark:bg-surface-card-dark border border-slate-200 dark:border-surface-border-subtle-dark hover:shadow-md transition-shadow group">
           <div className="flex items-center gap-3 mb-2">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-brand-100 text-brand-600 dark:bg-brand-900/20 dark:text-brand-400">
@@ -82,6 +109,11 @@ export default function CollabOverviewPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">企业公告与通知</p>
         </Link>
       </div>
+
+      <DomainNavGrid
+        className="mb-6"
+        items={getNavItemsByPrefixes(['/collab', '/knowledge'], { excludeExact: ['/collab'] })}
+      />
 
       <SectionCard title="最近公告" icon={<Megaphone className="w-4 h-4" />} viewAllTo="/collab/announcements">
         <ListSection<Announcement>

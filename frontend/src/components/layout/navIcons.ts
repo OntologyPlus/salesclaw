@@ -8,7 +8,7 @@ import {
   Gauge, AlertTriangle, CheckSquare, FileCheck, Megaphone,
   HelpCircle, Network, Database, ListTodo, Trophy, Bell,
   Wand2, Presentation, Crown, GitBranch, FileUp, ClipboardCheck,
-  FileSignature, AlertOctagon, Ban,
+  FileSignature, AlertOctagon, Ban, BadgeCheck, CalendarDays, Package,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -31,6 +31,7 @@ export const navIconMap: Record<string, LucideIcon> = {
   '/sales/roi': TrendingUp,
   // 智能培训
   '/training': GraduationCap,
+  '/training/onboarding': BadgeCheck,
   '/training/activities': Trophy,
   '/training/personas': Users,
   '/training/scenario-parse': Wand2,
@@ -56,6 +57,8 @@ export const navIconMap: Record<string, LucideIcon> = {
   '/decision/diagnosis': Shield,
   // 协同办公
   '/collab': Users,
+  '/collab/academic-chat': MessageSquare,
+  '/collab/academic-board': CalendarDays,
   '/collab/tasks': CheckSquare,
   '/collab/approvals': FileCheck,
   '/collab/announcements': Megaphone,
@@ -79,6 +82,7 @@ export const navIconMap: Record<string, LucideIcon> = {
   '/compliance/profile': UserCheck,
   '/compliance/commitment': FileSignature,
   '/compliance/violation': AlertOctagon,
+  '/compliance/audit-pack': Package,
   '/compliance/forbidden': Ban,
   '/compliance/disclosure': Megaphone,
   '/compliance/submission': FileUp,

@@ -7,6 +7,7 @@ import ComplianceForbiddenPage from './ComplianceForbiddenPage'
 import ComplianceDisclosurePage from './ComplianceDisclosurePage'
 import ComplianceSubmissionPage from './ComplianceSubmissionPage'
 import ComplianceAuditPage from './ComplianceAuditPage'
+import AuditPackPage from './AuditPackPage'
 
 export default function ComplianceRoutes() {
   return (
@@ -19,6 +20,7 @@ export default function ComplianceRoutes() {
       <Route path="disclosure" element={<ComplianceDisclosurePage />} />
       <Route path="submission" element={<ComplianceSubmissionPage />} />
       <Route path="audit" element={<ComplianceAuditPage />} />
+      <Route path="audit-pack" element={<AuditPackPage />} />
       <Route path="*" element={<Navigate to="/compliance" replace />} />
     </Routes>
   )

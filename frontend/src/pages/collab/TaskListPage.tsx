@@ -6,6 +6,7 @@ import Empty from '@/components/ui/Empty'
 import useFetch from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { collabAPI } from '@/services/collab'
+import type { PageRes } from '@/types/page'
 
 interface TaskItem {
   id: number
@@ -23,12 +24,6 @@ interface TaskItem {
   created_at?: string
 }
 
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   pending: { label: '待处理', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },

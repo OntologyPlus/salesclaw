@@ -30,7 +30,7 @@ export default function Header() {
     {
       label: t('common.profile'),
       icon: <UserIcon className="w-4 h-4" />,
-      onClick: () => navigate('/settings'),
+      onClick: () => navigate('/profile'),
     },
     {
       label: t('common.logout'),
@@ -71,8 +71,10 @@ export default function Header() {
 
       {/* 中间：命令面板触发 */}
       <button
+        type="button"
         onClick={() => setPaletteOpen(true)}
-        className="flex items-center gap-2 px-3 h-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm text-slate-500 hover:border-slate-300 dark:hover:border-slate-600 transition-colors w-64"
+        aria-label={t('common.openCommandPalette')}
+        className="flex items-center gap-2 px-3 h-9 rounded-xl border border-slate-200 dark:border-surface-border-subtle-dark bg-white dark:bg-surface-card-dark text-sm text-slate-500 hover:border-slate-300 dark:hover:border-slate-600 transition-colors w-64"
       >
         <Search className="w-4 h-4" />
         <span className="flex-1 text-left text-slate-400">{t('common.commandPlaceholder')}</span>

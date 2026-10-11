@@ -726,6 +726,45 @@ class SuggestionAction(BusinessBase, BaseFields):
     evaluate_after = Column(DateTime, nullable=True)      # 预定评估时间（now + 24h）
 
 
+class AiAgentRun(BusinessBase, BaseFields):
+    """Phase B：Agent 运行记录 + ToolLoop checkpoint（可续跑）"""
+    __tablename__ = "ai_agent_runs"
+    run_id = Column(String(64), nullable=False, unique=True, index=True)
+    session_id = Column(String(64), nullable=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    intent = Column(String(64), nullable=True)
+    agent_name = Column(String(64), nullable=True)
+    skill_name = Column(String(128), nullable=True)
+    status = Column(String(32), default="running", index=True)  # running/completed/aborted/failed
+    cursor_round = Column(Integer, default=0)
+    max_rounds = Column(Integer, default=2)
+    messages = Column(JSON, default=list)       # ToolLoop working_messages
+    tools_used = Column(JSON, default=list)
+    last_content = Column(Text, nullable=True)
+    budget = Column(JSON, default=dict)         # {max_rounds, max_latency_ms, ...}
+    trace_id = Column(String(64), nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    updated_run_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ActionLedger(BusinessBase, BaseFields):
+    """Phase B：Action Gateway 幂等账本（Command 执行结果）"""
+    __tablename__ = "action_ledgers"
+    idempotency_key = Column(String(128), nullable=False, unique=True, index=True)
+    action_type = Column(String(128), nullable=False, index=True)
+    target = Column(String(256), nullable=True)
+    status = Column(String(32), default="pending", index=True)  # pending/completed/failed/rejected
+    proposal = Column(JSON, default=dict)
+    command = Column(JSON, default=dict)
+    result = Column(JSON, default=dict)
+    run_id = Column(String(64), nullable=True, index=True)
+    trace_id = Column(String(64), nullable=True, index=True)
+    user_id = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    executed_at = Column(DateTime, nullable=True)
+
+
 class DataLineage(BusinessBase, BaseFields):
     """N+4: 数据流追踪 — 记录数据从 source → target 的流动"""
     __tablename__ = "data_lineage"

@@ -7,6 +7,7 @@ import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 import { useFetch } from '@/hooks/useFetch'
 import { salesAPI } from '@/services/sales'
+import type { PageRes } from '@/types/page'
 
 // 反馈行
 interface Feedback extends Record<string, unknown> {
@@ -22,12 +23,6 @@ interface Feedback extends Record<string, unknown> {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 情感映射
 const sentimentMap: Record<string, { label: string; variant: 'success' | 'default' | 'error' }> = {

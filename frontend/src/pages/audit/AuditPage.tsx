@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button'
 import { useFetch } from '@/hooks/useFetch'
 import { auditAPI } from '@/services/audit'
 import AIInsightPanel from '@/components/ai/AIInsightPanel'
+import type { PageRes } from '@/types/page'
 
 // Top action
 interface TopAction {
@@ -39,12 +40,6 @@ function formatDetail(d: AuditLog['detail']): string {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 总览数据
 interface AuditOverview {

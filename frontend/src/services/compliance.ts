@@ -39,12 +39,7 @@ export interface AnnualComplianceAudit {
   audited_at: string | null
 }
 
-export interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
+export type { PageRes } from '@/types/page'
 
 export const complianceAPI = {
   // ── 公示 ──
@@ -154,6 +149,24 @@ export const complianceAPI = {
 
   handleViolationEvent: (eventId: number, result: string, status = 'resolved') =>
     api.post(`/compliance/violation-events/${eventId}/handle`, { result, status }).then(r => r.data.data),
+
+  getAuditPack: (params?: {
+    activity_id?: number
+    violation_event_id?: number
+    user_id?: number
+  }) => api.get('/compliance/audit-pack', { params }).then(r => r.data.data),
+
+  downloadAuditPack: (params?: {
+    activity_id?: number
+    violation_event_id?: number
+    user_id?: number
+  }) =>
+    api
+      .get('/compliance/audit-pack', {
+        params: { ...params, download: true },
+        responseType: 'blob',
+      })
+      .then(r => r.data as Blob),
 
   listAlerts: (params?: {
     status?: string

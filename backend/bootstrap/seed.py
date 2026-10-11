@@ -109,11 +109,18 @@ def seed_violation_rules() -> int:
         return count
 
 
+def seed_pharma_workflows() -> int:
+    """上岗三件套 + 学术活动三流 + 违规演示数据（幂等）"""
+    from bootstrap.seed_pharma_workflows import seed_pharma_workflows as _seed
+    return _seed()
+
+
 # seed 名称 -> 执行函数
 SEEDERS = (
     ("performance_policies", seed_performance_policies),
     ("data_quality_gates", seed_data_quality_gates),
     ("compliance_violation_rules", seed_violation_rules),
+    ("pharma_workflows", seed_pharma_workflows),
 )
 
 

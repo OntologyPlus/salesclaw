@@ -15,6 +15,7 @@ import Skeleton from '@/components/ui/Skeleton'
 import { useFetch } from '@/hooks/useFetch'
 import useToast from '@/hooks/useToast'
 import { trainingAPI } from '@/services/training'
+import type { PageRes } from '@/types/page'
 
 // 考试行
 interface ExamItem extends Record<string, unknown> {
@@ -69,12 +70,6 @@ interface SubmitResult {
 }
 
 // 分页响应
-interface PageRes<T> {
-  items?: T[]
-  total?: number
-  page?: number
-  page_size?: number
-}
 
 // 状态映射
 const statusMap: Record<string, { label: string; variant: 'default' | 'warning' | 'success' | 'error' | 'info' }> = {

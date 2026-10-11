@@ -22,6 +22,7 @@ from .schemas import (
     ReasoningFeedbackRequest,
     DeadLetterResolveRequest,
     CollaborateRequest,
+    RunResumeRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,9 @@ async def chat_send(
     db: Session = Depends(get_db),
 ):
     """普通聊天 - 七步状态机完整执行"""
-    result = await orchestrator.chat(req.message, user, req.session_id, db=db)
+    result = await orchestrator.chat(
+        req.message, user, req.session_id, db=db, intent=req.intent,
+    )
     return unified_response(result)
 
 
@@ -130,7 +133,7 @@ async def chat_stream(
     async def event_generator():
         try:
             async for evt in orchestrator.stream_chat(
-                req.message, user, req.session_id, db=db
+                req.message, user, req.session_id, db=db, intent=req.intent,
             ):
                 evt_type = evt.get("type", "content")
                 yield _sse_event(evt_type, evt)
@@ -152,7 +155,111 @@ async def chat_stream(
 
 @router.post("/ai/chat/{session_id}/abort")
 async def chat_abort(session_id: str, user: User = Depends(get_current_user)):
-    return unified_response({"aborted": True, "session_id": session_id})
+    """取消进行中的 chat/stream 运行（协作式；ToolLoop 轮次边界生效）。"""
+    from ai.run_control import run_registry
+    ok = run_registry.abort(session_id)
+    return unified_response({
+        "aborted": True,
+        "session_id": session_id,
+        "signal_set": ok,
+    })
+
+
+@router.get("/ai/workspace/{session_id}")
+async def get_workspace_draft(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """读取工作流 SceneWorkspace 草稿（供前端会话恢复门禁/回显）。"""
+    from ai.skills.scene_workspace import scene_workspace
+    from ai.skills.executor import WorkflowSkillExecutor
+
+    tenant_id = str(getattr(user, "tenant_id", "default"))
+    draft = scene_workspace.load(session_id, db, tenant_id, user.id)
+    # 空草稿（无门禁、无采集）视为不存在，避免前端误覆盖
+    if not (draft.gates_passed or draft.collection or draft.config or draft.scenario_id):
+        return unified_response(None, code=40400, message="workspace draft 不存在")
+    return unified_response(WorkflowSkillExecutor._serialize_draft_state(draft))
+
+
+# ──────────────────────────────────────────────
+# Phase B：Run Checkpoint / Traces / Eval
+# ──────────────────────────────────────────────
+
+@router.get("/ai/runs")
+async def list_agent_runs(
+    session_id: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """列出当前租户的 Agent run checkpoint。"""
+    from ai.checkpoint_store import list_runs
+    tenant_id = getattr(user, "tenant_id", "default")
+    items = list_runs(db, tenant_id=tenant_id, session_id=session_id, limit=50)
+    return unified_response({"items": items, "total": len(items)})
+
+
+@router.get("/ai/runs/{run_id}")
+async def get_agent_run(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from ai.checkpoint_store import load_run
+    tenant_id = getattr(user, "tenant_id", "default")
+    row = load_run(db, run_id, tenant_id=tenant_id)
+    if not row:
+        return unified_response(None, code=40400, message="run 不存在")
+    return unified_response(row)
+
+
+@router.post("/ai/runs/{run_id}/resume")
+async def resume_agent_run(
+    run_id: str,
+    req: RunResumeRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """从 checkpoint 续跑 ToolLoop。"""
+    from ai.checkpoint_store import load_run
+    tenant_id = getattr(user, "tenant_id", "default")
+    loaded = load_run(db, run_id, tenant_id=tenant_id)
+    if not loaded:
+        return unified_response(None, code=40400, message="run 不存在")
+    message = (req.message or "").strip() or (loaded.get("last_content") and "请继续完成刚才未完成的任务") or "继续"
+    result = await orchestrator.chat(
+        message=message,
+        user=user,
+        session_id=loaded.get("session_id"),
+        db=db,
+        intent=loaded.get("intent"),
+        tenant_id=tenant_id,
+        resume_run_id=run_id,
+    )
+    return unified_response(result)
+
+
+@router.get("/ai/traces/{trace_id}")
+async def get_trace_spans(
+    trace_id: str,
+    user: User = Depends(get_current_user),
+):
+    """查询进程内 OTEL 风格 span 树。"""
+    from ai.otel_spans import get_spans
+    spans = get_spans(trace_id)
+    return unified_response({"trace_id": trace_id, "spans": spans, "total": len(spans)})
+
+
+@router.post("/ai/eval/run")
+async def run_eval(
+    case: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    """触发 Eval Harness（管理员用途；同步跑黄金用例）。"""
+    from eval.runner import run_eval_suite
+    summary = await asyncio.to_thread(run_eval_suite, case)
+    return unified_response(summary)
 
 
 # ──────────────────────────────────────────────

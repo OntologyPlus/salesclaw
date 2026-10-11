@@ -11,6 +11,8 @@ import { decisionAPI } from '@/services/decision'
 import { contextAPI } from '@/services/context'
 import { useContextStore } from '@/stores/context'
 import ContextSwitcher from '@/components/ai/ContextSwitcher'
+import DomainNavGrid from '@/components/layout/DomainNavGrid'
+import { getNavItemsByPrefixes } from '@/config/navConfig'
 import api from '@/services/api'
 
 export default function DecisionOverviewPage() {
@@ -140,6 +142,11 @@ export default function DecisionOverviewPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">异常预警与行动建议</p>
         </Link>
       </div>
+
+      <DomainNavGrid
+        className="mt-6"
+        items={getNavItemsByPrefixes(['/decision'], { excludeExact: ['/decision'] })}
+      />
 
       {/* AI 内联标注区 */}
       <div className="mt-6 space-y-3">
