@@ -1,0 +1,16 @@
+---
+description: Backend Python runtime — conda env salesclaw (3.12)
+alwaysApply: true
+---
+
+# Backend runtime
+
+- System backend runs in conda env **`salesclaw`** with **Python 3.12**.
+- When installing deps, running scripts, uvicorn, pytest, alembic, or any `python`/`pip` command for `backend/`, activate that env first:
+
+```bash
+conda activate salesclaw
+# or: conda run -n salesclaw python ...
+```
+
+- Do not use the system Python, other conda envs, or venv unless the user explicitly asks.
